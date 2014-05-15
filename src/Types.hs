@@ -5,23 +5,32 @@ module Types where
 
 import Control.Monad.State
 import Control.Monad.Writer
-import Data.Map as Map
+import qualified Data.Map as Map
 
 data NState = Leader | 
-                 Follower |
-                 Candidate
-                 deriving (Show, Eq)
-                 
-type NodeState = State NState
+              Follower |
+              Candidate
+              deriving (Show, Eq)
+
+data NodeStateDetails = NodeStateDetails {
+                          curState :: NState,
+                          lastIndex :: Integer,
+                          curLeaderId :: NodeId,
+                          votedFor :: NodeId,
+                          followerList :: [NodeId]
+                        } deriving (Show)
+
+type NodeState = State NodeStateDetails
 
 type Index = Integer
 type Term = Integer
 type LogState = (Index, Term)
 type Log = [(LogState, String)]
 
-type StateMap = Map Node NState
+type StateMap = Map.Map Node NState
 
-data Node = Node {getId :: String} deriving (Ord, Eq)
+type NodeId = String
+data Node = Node {getId :: NodeId} deriving (Ord, Eq)
 
 data Command = 
     Bootup |

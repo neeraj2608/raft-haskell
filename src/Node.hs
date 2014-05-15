@@ -18,21 +18,25 @@ module Node where
 import Types
 import Control.Monad.State
 import Control.Monad.Writer
-import Data.Map as Map
+import qualified Data.Map as Map
+import Follower
+import Candidate
+import Leader
 
 initStateMap :: [Node] -> StateMap
-initStateMap = Prelude.foldr (\node map -> Map.insert node Follower map) Map.empty
+initStateMap = foldr (\node map -> Map.insert node Follower map) Map.empty
 
 main :: IO ()
 main = do
-  let states = Prelude.map (\x -> sendCmd x (initStateMap nodeList) Bootup) nodeList
-  putStrLn $ unlines $ Prelude.map show states 
+  let states = map (\x -> sendCmd x (initStateMap nodeList) Bootup) nodeList
+  putStrLn $ unlines $ map show states 
   where nodeList = [Node "a", Node "b", Node "c"]
 
-sendCmd :: Node -> StateMap -> Command -> Log
+sendCmd :: Node -> StateMap -> Command -> [String]
 sendCmd node stateMap cmd = case Map.lookup node stateMap of
-  Just state -> updateState cmd state
-  Nothing -> error "No state found"
+  Just state -> do
+    map (\(x,y) -> (getId node) ++ " " ++ (show . fst) x ++ " " ++ (show . snd) x ++ " " ++  y) $ updateState cmd state
+  Nothing -> error "No state found for node " ++ [getId node]
 
 updateState :: Command -> NState -> Log
 updateState cmd = (snd . (evalState $ runWriterT (updateStateT cmd)))
@@ -43,25 +47,10 @@ updateStateT cmd = do
   case curState of
     Leader -> do
       tell [((1, 1), show cmd)]
-      put $ handleLeaderCommand cmd curState
+      put $ Leader.handleCommand cmd curState
     Follower -> do
       tell [((1, 1), show cmd)]
-      put $ handleFollowerCommand cmd curState
+      put $ Follower.handleCommand cmd curState
     Candidate -> do
       tell [((1, 1), show cmd)]
-      put $ handleCandidateCommand cmd curState
-
-handleFollowerCommand :: Command -> NState -> NState
-handleFollowerCommand cmd state = case cmd of
-  Bootup -> undefined
-  _ -> undefined
-
-handleCandidateCommand :: Command -> NState -> NState
-handleCandidateCommand cmd state = case cmd of
-  -- TODO
-  _ -> undefined
-
-handleLeaderCommand :: Command -> NState -> NState
-handleLeaderCommand cmd state = case cmd of
-  -- TODO
-  _ -> undefined
+      put $ Candidate.handleCommand cmd curState
