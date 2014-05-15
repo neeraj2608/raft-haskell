@@ -26,38 +26,42 @@ initStateMap = Prelude.foldr (\node map -> Map.insert node Follower map) Map.emp
 main :: IO ()
 main = do
   let states = Prelude.map (\x -> sendCmd x (initStateMap nodeList) Bootup) nodeList
-  putStrLn $ unwords $ Prelude.map show states 
+  putStrLn $ unlines $ Prelude.map show states 
   where nodeList = [Node "a", Node "b", Node "c"]
 
-sendCmd :: Node -> StateMap -> Command -> NState
+sendCmd :: Node -> StateMap -> Command -> Log
 sendCmd node stateMap cmd = case Map.lookup node stateMap of
   Just state -> updateState cmd state
   Nothing -> error "No state found"
 
-updateState :: Command -> NState -> NState
-updateState cmd = execState (runWriterT (test cmd))
+updateState :: Command -> NState -> Log
+updateState cmd = (snd . (evalState $ runWriterT (updateStateT cmd)))
 
-test :: Command -> WriterT Log (State NState) ()
-test cmd = do
+updateStateT :: Command -> WriterT Log (State NState) ()
+updateStateT cmd = do
   curState <- get
   case curState of
-    Leader -> handleLeaderCommand cmd curState
-    Follower -> handleFollowerCommand cmd curState
-    Candidate -> handleCandidateCommand cmd curState
+    Leader -> do
+      tell [((1, 1), show cmd)]
+      put $ handleLeaderCommand cmd curState
+    Follower -> do
+      tell [((1, 1), show cmd)]
+      put $ handleFollowerCommand cmd curState
+    Candidate -> do
+      tell [((1, 1), show cmd)]
+      put $ handleCandidateCommand cmd curState
 
-handleFollowerCommand :: Command -> NState -> WriterT Log (State NState) ()
+handleFollowerCommand :: Command -> NState -> NState
 handleFollowerCommand cmd state = case cmd of
-  Bootup -> do
-    tell [((1, 1), show cmd)]
-    put Leader
+  Bootup -> undefined
   _ -> undefined
 
-handleCandidateCommand :: Command -> NState -> WriterT Log (State NState) ()
+handleCandidateCommand :: Command -> NState -> NState
 handleCandidateCommand cmd state = case cmd of
   -- TODO
   _ -> undefined
 
-handleLeaderCommand :: Command -> NState -> WriterT Log (State NState) ()
+handleLeaderCommand :: Command -> NState -> NState
 handleLeaderCommand cmd state = case cmd of
   -- TODO
   _ -> undefined
