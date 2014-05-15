@@ -21,48 +21,43 @@ import Control.Monad.Writer
 import Data.Map as Map
 
 initStateMap :: [Node] -> StateMap
-initStateMap nodeList = Prelude.foldr (\node map -> Map.insert node Follower map) Map.empty nodeList
+initStateMap = Prelude.foldr (\node map -> Map.insert node Follower map) Map.empty
 
 main :: IO ()
-main = sendCmd (Node "b") (initStateMap nodeList) Bootup
+main = do
+  let states = Prelude.map (\x -> sendCmd x (initStateMap nodeList) Bootup) nodeList
+  putStrLn $ unwords $ Prelude.map show states 
   where nodeList = [Node "a", Node "b", Node "c"]
 
-sendCmd :: Node -> StateMap -> Command -> IO ()
-sendCmd node stateMap cmd = case (Map.lookup node stateMap) of -- look up node's state and call updateState
-  Just state -> do
-    let newState = updateState cmd state
-    print newState
+sendCmd :: Node -> StateMap -> Command -> NState
+sendCmd node stateMap cmd = case Map.lookup node stateMap of
+  Just state -> updateState cmd state
   Nothing -> error "No state found"
 
 updateState :: Command -> NState -> NState
-updateState cmd startState = do
-  execState (runWriterT (test cmd)) startState
+updateState cmd = execState (runWriterT (test cmd))
 
-test :: Command -> WriterT Log (State NState) Command
+test :: Command -> WriterT Log (State NState) ()
 test cmd = do
   curState <- get
   case curState of
-    Leader -> do
-      handleLeaderCommand cmd curState
-    Follower -> do
-      handleFollowerCommand cmd curState
-    Candidate -> do
-      handleCandidateCommand cmd curState
+    Leader -> handleLeaderCommand cmd curState
+    Follower -> handleFollowerCommand cmd curState
+    Candidate -> handleCandidateCommand cmd curState
 
-handleFollowerCommand :: Command -> NState -> WriterT Log (State NState) Command
+handleFollowerCommand :: Command -> NState -> WriterT Log (State NState) ()
 handleFollowerCommand cmd state = case cmd of
   Bootup -> do
-    tell [((1, 1), (show cmd))]
+    tell [((1, 1), show cmd)]
     put Leader
-    return cmd
   _ -> undefined
 
-handleCandidateCommand :: Command -> NState -> WriterT Log (State NState) Command
+handleCandidateCommand :: Command -> NState -> WriterT Log (State NState) ()
 handleCandidateCommand cmd state = case cmd of
   -- TODO
   _ -> undefined
 
-handleLeaderCommand :: Command -> NState -> WriterT Log (State NState) Command
+handleLeaderCommand :: Command -> NState -> WriterT Log (State NState) ()
 handleLeaderCommand cmd state = case cmd of
   -- TODO
   _ -> undefined
