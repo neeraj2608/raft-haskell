@@ -9,12 +9,13 @@ module Driver where
 
 import Control.Concurrent.Timer
 import Control.Concurrent.Suspend
+import Control.Monad
 import Types
 import Node
 
 main = do
-    map (invokeCmd Bootup) nodeList
-    return ()
+    map (\x -> run (test x Bootup)) nodeList
+    --return ()
     --repeatedTimer (putStrLn "hi") (msDelay 500)
     
     where

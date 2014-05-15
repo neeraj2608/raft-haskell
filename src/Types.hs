@@ -5,20 +5,23 @@ module Types where
 
 import Control.Monad.State
 import Control.Monad.Writer
+import Data.Map as Map
 
-data Node = Node {getName :: String}
-
-data NodeState = Leader | 
+data NState = Leader | 
                  Follower |
                  Candidate
                  deriving (Show, Eq)
+                 
+type NodeState = State NState
 
 type Index = Integer
 type Term = Integer
 type LogState = (Index, Term)
-type Log = [LogState] -- will have to add a String for the command being logged as well
+type Log = [(LogState, String)]
 
-type NS = WriterT Log (StateT NodeState IO)
+type StateMap = Map Node NState
+
+data Node = Node {getId :: String} deriving (Ord, Eq)
 
 data Command = 
     Bootup |
@@ -56,3 +59,4 @@ data Command =
     AcceptClientReq |
     
     RespondClientReq
+    deriving (Show)
