@@ -14,22 +14,23 @@ data NState = Leader |
 
 data NodeStateDetails = NodeStateDetails {
                           curState :: NState,
-                          lastIndex :: Integer,
+                          commitIndex :: Integer,
                           curLeaderId :: NodeId,
                           votedFor :: NodeId,
                           followerList :: [NodeId]
                         } deriving (Show)
 
-type NodeState = State NodeStateDetails
+type NodeStateT = WriterT Log (State NodeStateDetails)
 
 type Index = Integer
 type Term = Integer
 type LogState = (Index, Term)
 type Log = [(LogState, String)]
 
-type StateMap = Map.Map Node NState
+type StateMap = Map.Map Node NodeStateDetails
 
-type NodeId = String
+type NodeId = Maybe String
+
 data Node = Node {getId :: NodeId} deriving (Ord, Eq)
 
 data Command = 

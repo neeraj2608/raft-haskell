@@ -22,35 +22,41 @@ import qualified Data.Map as Map
 import Follower
 import Candidate
 import Leader
+import Data.Maybe (fromJust)
 
 initStateMap :: [Node] -> StateMap
-initStateMap = foldr (\node map -> Map.insert node Follower map) Map.empty
+initStateMap = foldr (\node map -> Map.insert node initState map) Map.empty
+  where initState = NodeStateDetails Follower 0 Nothing Nothing []
 
 main :: IO ()
 main = do
   let states = map (\x -> sendCmd x (initStateMap nodeList) Bootup) nodeList
   putStrLn $ unlines $ map show states 
-  where nodeList = [Node "a", Node "b", Node "c"]
+  where nodeList = [Node (Just "a"), Node (Just "b"), Node (Just "c")]
 
 sendCmd :: Node -> StateMap -> Command -> [String]
-sendCmd node stateMap cmd = case Map.lookup node stateMap of
+sendCmd node initStateMap cmd = case Map.lookup node initStateMap of
   Just state -> do
-    map (\(x,y) -> (getId node) ++ " " ++ (show . fst) x ++ " " ++ (show . snd) x ++ " " ++  y) $ updateState cmd state
-  Nothing -> error "No state found for node " ++ [getId node]
+    map (\(x,y) -> (fromJust $ getId node) ++ " " ++ (show . fst) x ++ " " ++ (show . snd) x ++ " " ++  y) $ updateState cmd state
+  Nothing -> error "No state found for node " ++ [show $ getId node]
 
-updateState :: Command -> NState -> Log
+updateState :: Command -> NodeStateDetails -> Log
 updateState cmd = (snd . (evalState $ runWriterT (updateStateT cmd)))
 
-updateStateT :: Command -> WriterT Log (State NState) ()
+updateStateT :: Command -> NodeStateT ()
 updateStateT cmd = do
-  curState <- get
-  case curState of
+  s <- get
+  let currentState = curState s
+  case currentState of
     Leader -> do
       tell [((1, 1), show cmd)]
-      put $ Leader.handleCommand cmd curState
+      let newState = Leader.handleCommand cmd currentState
+      put s{curState=newState}
     Follower -> do
       tell [((1, 1), show cmd)]
-      put $ Follower.handleCommand cmd curState
+      let newState = Follower.handleCommand cmd currentState
+      put s{curState=newState}
     Candidate -> do
       tell [((1, 1), show cmd)]
-      put $ Candidate.handleCommand cmd curState
+      let newState = Candidate.handleCommand cmd currentState
+      put s{curState=newState}
