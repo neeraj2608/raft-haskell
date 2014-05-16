@@ -20,7 +20,8 @@ data NodeStateDetails = NodeStateDetails {
                           followerList :: [NodeId], -- ^ List of NodeIds of this node's followers
                           lastLogIndex :: Integer, -- ^ The last index in the log written thus far
                           lastLogTerm :: Integer, -- ^ The last term in the log written thus far
-                          nodeId :: Maybe String  -- ^ The id of this node
+                          nodeId :: Maybe String,  -- ^ The id of this node
+                          inbox :: [Command] -- ^ Commands destined for this node
                         } deriving (Show)
 
 type NodeId = Maybe String
@@ -39,6 +40,8 @@ data Command =
 
     -- used by candidates to broadcast requestVotes
     Broadcast Command |
+
+    StartCanvassing |
 
     -- broadcast by candidates
     -- candidate includes its state. Used at follower end to determine if the follower is more
