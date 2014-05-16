@@ -18,45 +18,57 @@ module Node where
 import Types
 import Control.Monad.State
 import Control.Monad.Writer
-import qualified Data.Map as Map
-import Follower
-import Candidate
-import Leader
+import Control.Concurrent
+import Control.Concurrent.Timer
+import Control.Concurrent.Suspend
 import Data.Maybe (fromJust)
-
-initStateMap :: [Node] -> StateMap
-initStateMap = foldr (\node map -> Map.insert node initState map) Map.empty
-  where initState = NodeStateDetails Follower 0 Nothing Nothing []
 
 main :: IO ()
 main = do
-  let states = map (\x -> sendCmd x (initStateMap nodeList) Bootup) nodeList
-  putStrLn $ unlines $ map show states 
-  where nodeList = [Node (Just "a"), Node (Just "b"), Node (Just "c")]
+        (lg,_) <- run Bootup
+        putStrLn "Log:"
+        putStrLn $ unlines $ map show lg
+        return ()
 
-sendCmd :: Node -> StateMap -> Command -> [String]
-sendCmd node initStateMap cmd = case Map.lookup node initStateMap of
-  Just state -> do
-    map (\(x,y) -> (fromJust $ getId node) ++ " " ++ (show . fst) x ++ " " ++ (show . snd) x ++ " " ++  y) $ updateState cmd state
-  Nothing -> error "No state found for node " ++ [show $ getId node]
+toNWS :: NodeStateDetails -> NWS ()
+toNWS = put
 
-updateState :: Command -> NodeStateDetails -> Log
-updateState cmd = (snd . (evalState $ runWriterT (updateStateT cmd)))
+liftio :: IO a -> WriterT Log (StateT NodeStateDetails IO) a
+liftio = lift . lift
 
-updateStateT :: Command -> NodeStateT ()
+run :: Command -> IO (Log, NodeStateDetails)
+run cmd = runStateT (execWriterT (updateStateT cmd)) initState -- runWriterT :: WriterT w m a -> m (a, w)
+                                                               -- runStateT :: StateT s m a -> s -> m (a, s)
+        where initState = NodeStateDetails Follower 0 Nothing Nothing [] 0 0 (Just "node1")
+
+
+updateStateT :: Command -> NWS ()
 updateStateT cmd = do
-  s <- get
-  let currentState = curState s
-  case currentState of
-    Leader -> do
-      tell [((1, 1), show cmd)]
-      let newState = Leader.handleCommand cmd currentState
-      put s{curState=newState}
-    Follower -> do
-      tell [((1, 1), show cmd)]
-      let newState = Follower.handleCommand cmd currentState
-      put s{curState=newState}
-    Candidate -> do
-      tell [((1, 1), show cmd)]
-      let newState = Candidate.handleCommand cmd currentState
-      put s{curState=newState}
+        nsd <- get
+        let currentState = curState nsd
+        case currentState of
+          Follower -> do
+            logInfo (show cmd)
+            newNsd <- Node.handleCommand cmd nsd
+            put newNsd
+
+handleCommand :: Command -> NodeStateDetails -> NWS NodeStateDetails
+handleCommand cmd nsd =
+        case cmd of
+            Bootup -> do
+                tVar <- liftio newEmptyMVar
+                liftio $ forkIO (do oneShotTimer (putMVar tVar True) (sDelay 2); return ()) --TODO randomize this duration
+                logInfo "Waiting..."
+                liftio $ takeMVar tVar
+                liftio $ putStrLn "Timeout"
+                logInfo "Switching to Leader"
+                return nsd{curState=Leader}
+            _ -> undefined
+
+logInfo :: String -> NWS ()
+logInfo info = do
+        nsd <- get
+        let nodeid = nodeId nsd
+        let index = lastLogIndex nsd
+        let term = lastLogTerm nsd
+        tell [((index,term),fromJust nodeid ++ " " ++ info)]
