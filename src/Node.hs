@@ -45,13 +45,15 @@ run cmd = runStateT (execWriterT (updateStateT cmd)) initState -- runWriterT :: 
 updateStateT :: Command -> NWS ()
 updateStateT cmd = do
         nsd <- get
-        let currentState = curState nsd
+        let currentState = currRole nsd
         case currentState of
-          Follower -> do
-            logInfo (show cmd)
-            newNsd <- Node.handleCommand cmd nsd
-            put newNsd
+            -- TODO add handlers for Leader and Candidate
+            Follower -> do
+              logInfo (show cmd)
+              newNsd <- Node.handleCommand cmd nsd
+              put newNsd
 
+-- TODO move this to the Follower module
 handleCommand :: Command -> NodeStateDetails -> NWS NodeStateDetails
 handleCommand cmd nsd =
         case cmd of
@@ -62,9 +64,10 @@ handleCommand cmd nsd =
                 liftio $ takeMVar tVar
                 liftio $ putStrLn "Timeout"
                 logInfo "Switching to Leader"
-                return nsd{curState=Leader}
+                return nsd{currRole=Leader}
             _ -> undefined
 
+-- | Log a string. Uses the current term and index
 logInfo :: String -> NWS ()
 logInfo info = do
         nsd <- get

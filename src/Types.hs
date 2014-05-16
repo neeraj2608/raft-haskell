@@ -11,15 +11,16 @@ data Role = Leader |
 
 type NWS = WriterT Log (StateT NodeStateDetails IO)
 
+-- | Encapsulates the state of a Raft node
 data NodeStateDetails = NodeStateDetails {
-                          curState :: Role,
+                          currRole :: Role, -- ^ Current role of this node
                           commitIndex :: Integer,
-                          curLeaderId :: NodeId,
-                          votedFor :: NodeId,
-                          followerList :: [NodeId],
-                          lastLogIndex :: Integer,
-                          lastLogTerm :: Integer,
-                          nodeId :: Maybe String
+                          curLeaderId :: NodeId, -- ^  Id of the current leader. Used by followers to redirect requests sent to them by clients
+                          votedFor :: NodeId, -- ^ Id of the last node we voted for
+                          followerList :: [NodeId], -- ^ List of NodeIds of this node's followers
+                          lastLogIndex :: Integer, -- ^ The last index in the log written thus far
+                          lastLogTerm :: Integer, -- ^ The last term in the log written thus far
+                          nodeId :: Maybe String  -- ^ The id of this node
                         } deriving (Show)
 
 type NodeId = Maybe String
