@@ -21,20 +21,13 @@ import Control.Monad.Writer
 import Control.Concurrent
 import Control.Concurrent.Timer
 import Control.Concurrent.Suspend
-import Data.Maybe (fromJust)
 import Control.Concurrent.STM
+import Text.Printf
+import Data.Maybe (fromJust)
 
---main :: IO ()
---main = do
---        (lg,_) <- run Bootup
---        putStrLn "Log:"
---        putStrLn $ unlines $ map show lg
---        return ()
-
-startInboxListener :: TChan Command -> IO ()
-startInboxListener ibox = forever $ do
-    cmd <- atomically $ readTChan ibox
-    (lg,_) <- Node.run cmd
+startInboxListener :: NodeStateDetails -> IO ()
+startInboxListener nsd = forever $ do
+    (lg,_) <- Node.run nsd
     putStrLn "Log:"
     putStrLn $ unlines $ map show lg
 
@@ -44,31 +37,29 @@ toNWS = put
 liftio :: IO a -> WriterT Log (StateT NodeStateDetails IO) a
 liftio = lift . lift
 
-run :: Command -> IO (Log, NodeStateDetails)
-run cmd = runStateT (execWriterT updateState) initState -- runWriterT :: WriterT w m a -> m (a, w); w = Log, m = StateT NodeStateDetails IO, a = NodeStateDetails
-                                                        -- runStateT :: StateT s m a -> s -> m (a, s); s = NodeStateDetails, m = IO, a = Log
-                                                        -- execWriterT :: Monad m => WriterT w m a -> m w; w = Log, m = StateT NodeStateDetails IO, a = NodeStateDetails
-        where initState = NodeStateDetails Follower 0 Nothing Nothing [] 0 0 (Just "node1") [cmd]
+liftstm :: STM a -> WriterT Log (StateT NodeStateDetails IO) a
+liftstm = liftio . atomically
+
+run :: NodeStateDetails -> IO (Log, NodeStateDetails)
+run = runStateT (execWriterT updateState) -- runWriterT :: WriterT w m a -> m (a, w); w = Log, m = StateT NodeStateDetails IO, a = NodeStateDetails
+                                          -- runStateT :: StateT s m a -> s -> m (a, s); s = NodeStateDetails, m = IO, a = Log
+                                          -- execWriterT :: Monad m => WriterT w m a -> m w; w = Log, m = StateT NodeStateDetails IO, a = NodeStateDetails
 
 updateState :: NWS NodeStateDetails
 updateState = do
         nsd <- get
         let currentState = currRole nsd
             ibox = inbox nsd
-        logInfo $ "Role " ++ show currentState
-        if null ibox
-            then return nsd
-            else do
-                let ([cmd],rest) = splitAt 1 ibox
-                put nsd{inbox=rest}
-                case currentState of
-                  -- TODO add handlers for Leader and Candidate
-                  Follower -> do
-                    logInfo (show cmd)
-                    liftM incTermIndex $ Node.processCommand cmd
-                  Candidate -> do
-                    logInfo (show cmd)
-                    return nsd
+        logInfo $ "Role: " ++ show currentState
+        cmd <- liftstm $ readTChan ibox
+        case currentState of
+          -- TODO add handlers for Leader and Candidate
+          Follower -> do
+            logInfo $ "Received: " ++ show cmd
+            liftM incTermIndex $ Node.processCommand cmd
+          Candidate -> do
+            logInfo $ "Received: " ++ show cmd
+            return nsd
 
 incTermIndex :: NodeStateDetails -> NodeStateDetails
 incTermIndex nsd = nsd{lastLogIndex=lastLogIndex nsd + 1, lastLogTerm=lastLogTerm nsd + 1}
@@ -76,7 +67,7 @@ incTermIndex nsd = nsd{lastLogIndex=lastLogIndex nsd + 1, lastLogTerm=lastLogTer
 -- TODO move this to the Follower module
 processCommand :: Command -> NWS NodeStateDetails
 processCommand cmd =
-        processCommand' >> modify incTermIndex >> updateState
+        processCommand' >> modify incTermIndex >> get -- TODO: pretty sure the term shouldn't always increase. check the paper.
         where
               processCommand' = do
                   nsd <- get
@@ -88,10 +79,13 @@ processCommand cmd =
                           liftio $ takeMVar tVar -- wait for election timeout to expire
                           liftio $ putStrLn "Election time expired"
                           let ibox = inbox nsd
-                          when (null ibox) $ -- nothing in our inbox, switch to candidate
+                          e <- liftstm $ isEmptyTChan ibox
+                          when e $ -- nothing in our inbox, switch to candidate
                               do
                                   logInfo "Switching to Candidate"
-                                  put nsd{currRole=Candidate, inbox=StartCanvassing:ibox}
+                                  liftstm $ writeTChan ibox StartCanvassing
+                                  put nsd{currRole=Candidate}
+                      _ -> logInfo $ printf "Invalid command: %s %s" ((show . currRole) nsd) (show cmd)
 
 -- | Log a string. Uses the current term and index
 logInfo :: String -> NWS ()
@@ -100,4 +94,4 @@ logInfo info = do
         let nodeid = nodeId nsd
         let index = lastLogIndex nsd
         let term = lastLogTerm nsd
-        tell [((index,term),fromJust nodeid ++ " " ++ info)]
+        tell [((index,term),"-# " ++ fromJust nodeid ++  " #- " ++ info)]

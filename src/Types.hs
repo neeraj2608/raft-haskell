@@ -1,7 +1,9 @@
+{-# LANGUAGE FlexibleInstances #-}
 module Types where
 
 import Control.Monad.State
 import Control.Monad.Writer
+import Control.Concurrent.STM
 import qualified Data.Map as Map
 
 data Role = Leader |
@@ -21,8 +23,11 @@ data NodeStateDetails = NodeStateDetails {
                           lastLogIndex :: Integer, -- ^ The last index in the log written thus far
                           lastLogTerm :: Integer, -- ^ The last term in the log written thus far
                           nodeId :: Maybe String,  -- ^ The id of this node
-                          inbox :: [Command]
+                          inbox :: TChan Command
                         } deriving (Show)
+
+instance Show (TChan Command) where
+        show _ = "inbox"
 
 type NodeId = Maybe String
 
