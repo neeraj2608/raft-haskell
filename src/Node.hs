@@ -31,13 +31,12 @@ import Control.Concurrent.STM
 --        putStrLn $ unlines $ map show lg
 --        return ()
 
-startNodeLifeCycle :: TChan Command -> IO ()
-startNodeLifeCycle ibox = forever $ do
+startInboxListener :: TChan Command -> IO ()
+startInboxListener ibox = forever $ do
     cmd <- atomically $ readTChan ibox
     (lg,_) <- Node.run cmd
     putStrLn "Log:"
     putStrLn $ unlines $ map show lg
-    --return ()
 
 toNWS :: NodeStateDetails -> NWS ()
 toNWS = put
