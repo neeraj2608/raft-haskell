@@ -37,13 +37,13 @@ liftio :: IO a -> WriterT Log (StateT NodeStateDetails IO) a
 liftio = lift . lift
 
 run :: Command -> IO (Log, NodeStateDetails)
-run cmd = runStateT (execWriterT updateStateT) initState -- runWriterT :: WriterT w m a -> m (a, w); w = Log, m = StateT NodeStateDetails IO, a = NodeStateDetails
+run cmd = runStateT (execWriterT updateState) initState -- runWriterT :: WriterT w m a -> m (a, w); w = Log, m = StateT NodeStateDetails IO, a = NodeStateDetails
                                                          -- runStateT :: StateT s m a -> s -> m (a, s); s = NodeStateDetails, m = IO, a = Log
                                                          -- execWriterT :: Monad m => WriterT w m a -> m w; w = Log, m = StateT NodeStateDetails IO, a = NodeStateDetails
         where initState = NodeStateDetails Follower 0 Nothing Nothing [] 0 0 (Just "node1") [cmd]
 
-updateStateT :: NWS NodeStateDetails
-updateStateT = do
+updateState :: NWS NodeStateDetails
+updateState = do
         nsd <- get
         let currentState = currRole nsd
             ibox = inbox nsd
@@ -68,7 +68,7 @@ incTermIndex nsd = nsd{lastLogIndex=lastLogIndex nsd + 1, lastLogTerm=lastLogTer
 -- TODO move this to the Follower module
 processCommand :: Command -> NWS NodeStateDetails
 processCommand cmd =
-        processCommand' >> modify incTermIndex >> updateStateT
+        processCommand' >> modify incTermIndex >> updateState
         where
               processCommand' = do
                   nsd <- get
