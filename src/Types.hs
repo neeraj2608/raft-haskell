@@ -5,6 +5,7 @@ import Control.Monad.State
 import Control.Monad.Writer
 import Control.Concurrent.STM
 import qualified Data.Map as Map
+import Data.Maybe (fromJust)
 
 data Role = Leader |
             Follower |
@@ -12,6 +13,24 @@ data Role = Leader |
             deriving (Show, Eq)
 
 type NWS = WriterT Log (StateT NodeStateDetails IO)
+
+toNWS :: NodeStateDetails -> NWS ()
+toNWS = put
+
+liftio :: IO a -> WriterT Log (StateT NodeStateDetails IO) a
+liftio = lift . lift
+
+liftstm :: STM a -> WriterT Log (StateT NodeStateDetails IO) a
+liftstm = liftio . atomically
+
+-- | Log a string. Uses the current term and index
+logInfo :: String -> NWS ()
+logInfo info = do
+        nsd <- get
+        let nodeid = nodeId nsd
+        let index = lastLogIndex nsd
+        let term = lastLogTerm nsd
+        tell [((index,term),"-# " ++ fromJust nodeid ++  " #- " ++ info)]
 
 -- | Encapsulates the state of a Raft node
 data NodeStateDetails = NodeStateDetails {
@@ -25,6 +44,10 @@ data NodeStateDetails = NodeStateDetails {
                           nodeId :: Maybe String,  -- ^ The id of this node
                           inbox :: TChan Command
                         } deriving (Show)
+
+
+incTermIndex :: NodeStateDetails -> NodeStateDetails
+incTermIndex nsd = nsd{lastLogIndex=lastLogIndex nsd + 1, lastLogTerm=lastLogTerm nsd + 1}
 
 instance Show (TChan Command) where
         show _ = "inbox"
