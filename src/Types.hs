@@ -20,11 +20,9 @@ data NodeStateDetails = NodeStateDetails {
                           followerList :: [NodeId], -- ^ List of NodeIds of this node's followers
                           lastLogIndex :: Integer, -- ^ The last index in the log written thus far
                           lastLogTerm :: Integer, -- ^ The last term in the log written thus far
-                          nodeId :: Maybe String  -- ^ The id of this node
+                          nodeId :: Maybe String,  -- ^ The id of this node
+                          inbox :: [Command]
                         } deriving (Show)
-
-data Inbox = Inbox {contents :: [Command]} -- a [] is okay to begin with, but inefficient. (O(n) last)
-           deriving (Show)
 
 type NodeId = Maybe String
 

@@ -4,9 +4,11 @@ import Types
 import Control.Concurrent
 import Control.Concurrent.STM
 import qualified Data.Map as Map
+import Control.Monad
+import Node
 
 type Port = String
-type ConnectionMap = TVar (Map.Map Node (TVar Inbox))
+type ConnectionMap = TVar (Map.Map Node (TChan Command))
 
 main :: IO ()
 main = do
@@ -19,20 +21,16 @@ main = do
         let nodes = map (Node . Just) nodeIds
         mapM_ (forkNode connectionMap) (zip nodes ports)
 
-        -- Send a command to a node by writing to its inbox
+        -- Init all the nodes
         m <- readTVarIO connectionMap
-        sendCommand Bootup $ Map.lookup (head nodes) m
-        sendCommand Bootup $ Map.lookup (nodes !! 1) m
+        mapM_ initNode $ Map.elems m
+        sendCommand AcceptClientReq (Map.lookup (head nodes) m)
 
         --sanity check
         putStr $ unlines $ map show $ Map.keys m
-        cmds <- mapM displayContents $ Map.elems m
-        putStr $ unlines cmds
-        where
-            displayContents :: TVar Inbox -> IO String
-            displayContents ibox = do
-                (Inbox x) <- readTVarIO ibox
-                return $ concatMap show x
+
+initNode :: TChan Command -> IO ()
+initNode = sendCommand Bootup . Just
 
 forkNode :: ConnectionMap -> (Node, Port) -> IO()
 forkNode connectionMap nodePort = do
@@ -41,15 +39,14 @@ forkNode connectionMap nodePort = do
 
 startNode :: Node -> Port -> ConnectionMap -> IO ()
 startNode node _ m = do
-        ibox <- newTVarIO $ Inbox [] -- inbox is empty to begin with
+        ibox <- newTChanIO -- inbox is empty to begin with
         atomically $ modifyTVar m (Map.insert node ibox)
-        forkIO $ startNodeLifeCycle ibox -- loop continuously and atomically check ibox for messages
+        forkIO $ Node.startNodeLifeCycle ibox -- loop continuously and atomically check ibox for messages
         return ()
-
-startNodeLifeCycle :: TVar Inbox -> IO ()
-startNodeLifeCycle _ = undefined
 
 -- | Send a command to a node's inbox
 -- TODO: eventually change the signature to Command -> Node -> IO ()
-sendCommand :: Command -> Maybe (TVar Inbox) -> IO ()
-sendCommand cmd (Just ibox) = atomically $ modifyTVar ibox (\x -> Inbox $ cmd:contents x)
+sendCommand :: Command -> Maybe (TChan Command) -> IO ()
+sendCommand cmd (Just ibox) = do
+        putStrLn $ "Sending command " ++ show cmd
+        atomically $ writeTChan ibox cmd

@@ -4,13 +4,13 @@ module Node where
   Generalized Raft node.
   This models all the state transitions and functionality
   of a node.
-  
+
   Leader needs to keep track of its followers (this list can
   be initialized when the leader was still a candidate) so it knows
   how many followers it has. This way, it can decide when
   a "majority" has responded. Leader also must keep track
   of the nextIndex and matchIndex for each of its followers.
-  
+
   Followers need to keep track of the leader so e.g. they
   can forward requests erroneously sent to them by clients
 -}
@@ -22,13 +22,22 @@ import Control.Concurrent
 import Control.Concurrent.Timer
 import Control.Concurrent.Suspend
 import Data.Maybe (fromJust)
+import Control.Concurrent.STM
 
-main :: IO ()
-main = do
-        (lg,_) <- run Bootup
-        putStrLn "Log:"
-        putStrLn $ unlines $ map show lg
-        return ()
+--main :: IO ()
+--main = do
+--        (lg,_) <- run Bootup
+--        putStrLn "Log:"
+--        putStrLn $ unlines $ map show lg
+--        return ()
+
+startNodeLifeCycle :: TChan Command -> IO ()
+startNodeLifeCycle ibox = forever $ do
+    cmd <- atomically $ readTChan ibox
+    (lg,_) <- Node.run cmd
+    putStrLn "Log:"
+    putStrLn $ unlines $ map show lg
+    --return ()
 
 toNWS :: NodeStateDetails -> NWS ()
 toNWS = put
@@ -38,8 +47,8 @@ liftio = lift . lift
 
 run :: Command -> IO (Log, NodeStateDetails)
 run cmd = runStateT (execWriterT updateState) initState -- runWriterT :: WriterT w m a -> m (a, w); w = Log, m = StateT NodeStateDetails IO, a = NodeStateDetails
-                                                         -- runStateT :: StateT s m a -> s -> m (a, s); s = NodeStateDetails, m = IO, a = Log
-                                                         -- execWriterT :: Monad m => WriterT w m a -> m w; w = Log, m = StateT NodeStateDetails IO, a = NodeStateDetails
+                                                        -- runStateT :: StateT s m a -> s -> m (a, s); s = NodeStateDetails, m = IO, a = Log
+                                                        -- execWriterT :: Monad m => WriterT w m a -> m w; w = Log, m = StateT NodeStateDetails IO, a = NodeStateDetails
         where initState = NodeStateDetails Follower 0 Nothing Nothing [] 0 0 (Just "node1") [cmd]
 
 updateState :: NWS NodeStateDetails
@@ -57,7 +66,7 @@ updateState = do
                   -- TODO add handlers for Leader and Candidate
                   Follower -> do
                     logInfo (show cmd)
-                    liftM incTermIndex $ Node.processCommand cmd 
+                    liftM incTermIndex $ Node.processCommand cmd
                   Candidate -> do
                     logInfo (show cmd)
                     return nsd
