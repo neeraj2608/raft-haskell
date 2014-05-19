@@ -18,19 +18,15 @@ module Node where
 import Types
 import Control.Monad.State
 import Control.Monad.Writer
-import Control.Concurrent
-import Control.Concurrent.Timer
-import Control.Concurrent.Suspend
 import Control.Concurrent.STM
-import Text.Printf
 import Follower
 
 startInboxListener :: NodeStateDetails -> IO ()
 startInboxListener nsd = do
-    (lg,newNsd) <- Node.run nsd
+    (lg,newNsd) <- run nsd
     putStrLn "Log:"
     putStrLn $ unlines $ map show lg
-    startInboxListener newNsd
+    startInboxListener newNsd --feed the updated state back in to run
 
 run :: NodeStateDetails -> IO (Log, NodeStateDetails)
 run = runStateT (execWriterT updateState) -- runWriterT :: WriterT w m a -> m (a, w); w = Log, m = StateT NodeStateDetails IO, a = NodeStateDetails
@@ -43,38 +39,14 @@ updateState = do
         let currentRole = currRole nsd
             ibox = inbox nsd
         logInfo $ "Role: " ++ show currentRole
-        cmd <- liftstm $ readTChan ibox
+        cmd <- liftstm $ tryReadTChan ibox
         case currentRole of
           -- TODO add handlers for Leader and Candidate
           Follower -> do
-            logInfo $ "Received: " ++ show cmd
             Follower.processCommand cmd
           Candidate -> do
-            logInfo $ "Received: " ++ show cmd
+            --logInfo $ "Received: " ++ show cmd
             return nsd
           Leader -> do
-            logInfo $ "Received: " ++ show cmd
+            --logInfo $ "Received: " ++ show cmd
             return nsd
-
--- TODO move this to the Follower module
---processCommand :: Command -> NWS NodeStateDetails
---processCommand cmd =
---        processCommand' >> modify incTermIndex >> get -- TODO: pretty sure the term shouldn't always increase. check the paper.
---        where
---              processCommand' = do
---                  nsd <- get
---                  case cmd of
---                      Bootup -> do
---                          tVar <- liftio newEmptyMVar
---                          liftio $ forkIO (do oneShotTimer (putMVar tVar True) (sDelay 2); return ()) --TODO randomize this duration -- TODO: make it configurable
---                          logInfo "Waiting..."
---                          liftio $ takeMVar tVar -- wait for election timeout to expire
---                          liftio $ putStrLn "Election time expired"
---                          let ibox = inbox nsd
---                          e <- liftstm $ isEmptyTChan ibox
---                          when e $ -- nothing in our inbox, switch to candidate
---                              do
---                                  logInfo "Switching to Candidate"
---                                  liftstm $ writeTChan ibox StartCanvassing
---                                  put nsd{currRole=Candidate}
---                      _ -> logInfo $ printf "Invalid command: %s %s" ((show . currRole) nsd) (show cmd)

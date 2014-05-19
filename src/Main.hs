@@ -25,13 +25,13 @@ main = do
         mapM_ (startNode connectionMap) (zip nodes ports)
 
         -- Send some test commands
-        --m <- readTVarIO connectionMap
-        --sendCommand AcceptClientReq (fromJust $ Map.lookup (head nodes) m)
+        m <- readTVarIO connectionMap
+        sendCommand AcceptClientReq (fromJust $ Map.lookup (head nodes) m)
 
-        --TODO: Here we should actually have an infinite loop that looks at
-        --incoming messages
+        -- TODO: Here we should actually have an infinite loop that looks at
+        -- incoming messages on this port
         tVar <- newEmptyMVar
-        forkIO (do oneShotTimer (putMVar tVar True) (sDelay 4); return ()) --TODO randomize this duration -- TODO: make it configurable
+        forkIO (do oneShotTimer (putMVar tVar True) (sDelay 6); return ()) --TODO randomize this duration -- TODO: make it configurable
         void $ takeMVar tVar -- wait for election timeout to expire
 
         --sanity check
@@ -49,14 +49,12 @@ initNode :: Node -> Port -> ConnectionMap -> IO ()
 initNode node _ m = do
         ibox <- newTChanIO
         let initState = NodeStateDetails Follower 0 Nothing Nothing [] 0 0 (getId node) ibox
-        atomically $ do
-            writeTChan ibox Bootup -- put Bootup in the inbox so the node can start up
-            modifyTVar m (Map.insert node ibox)
+        atomically $ modifyTVar m (Map.insert node ibox)
         void $ forkIO $ Node.startInboxListener initState -- loop continuously and atomically check ibox for messages
 
 -- | Send a command to a node's inbox
 -- TODO: eventually change the signature to Command -> Node -> IO ()
 sendCommand :: Command -> TChan Command -> IO ()
 sendCommand cmd ibox = do
-        printf "Sending command: %s \n" $ show cmd
+        printf "Sending command: %s\n" $ show cmd
         atomically $ writeTChan ibox cmd

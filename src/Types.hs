@@ -67,8 +67,6 @@ type Log = [(LogState, String)]
 type StateMap = Map.Map Node NodeStateDetails
 
 data Command =
-    Bootup |
-
     -- used by candidates to broadcast requestVotes
     Broadcast Command |
 

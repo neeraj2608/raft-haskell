@@ -8,8 +8,9 @@ import Control.Concurrent.Suspend
 import Control.Concurrent.STM
 import Text.Printf
 import System.Time
+import Data.Maybe (fromJust)
 
-processCommand :: Command -> NWS NodeStateDetails
+processCommand :: Maybe Command -> NWS NodeStateDetails
 processCommand cmd = do
         processCommand' >>= incTermIndex -- TODO: pretty sure the term shouldn't always increase. check the paper.
         where
@@ -17,7 +18,8 @@ processCommand cmd = do
             processCommand' = do
                 nsd <- get
                 case cmd of
-                    Bootup -> do
+                    --start election timeout
+                    Nothing -> do
                         tVar <- liftio newEmptyMVar
                         liftio $ forkIO (do oneShotTimer (putMVar tVar True) (sDelay 2); return ()) --TODO randomize this duration -- TODO: make it configurable
                         now <- liftio getClockTime
@@ -29,11 +31,17 @@ processCommand cmd = do
                         e <- liftstm $ isEmptyTChan ibox
                         if e -- nothing in our inbox, switch to candidate
                             then do
+                                logInfo "Nothing waiting in inbox"
                                 logInfo "Switching to Candidate"
                                 liftstm $ writeTChan ibox StartCanvassing
                                 let newNsd = nsd{currRole=Candidate}
                                 return newNsd
-                            else return nsd
-                    _ -> do
-                        logInfo $ printf "Invalid command: %s %s" ((show . currRole) nsd) (show cmd)
+                            else do
+                                logInfo "Something waiting in inbox"
+                                return nsd
+                    -- TODO: Add valid commands here
+                    --       e.g. RequestVoteRPC
+                    Just _ -> do
+                        logInfo $ "Received: " ++ (show $ fromJust cmd)
+                        logInfo $ printf "Invalid command: %s %s" ((show . currRole) nsd) (show $ fromJust cmd)
                         return nsd
