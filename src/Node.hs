@@ -26,10 +26,11 @@ import Text.Printf
 import Follower
 
 startInboxListener :: NodeStateDetails -> IO ()
-startInboxListener nsd = forever $ do
-    (lg,_) <- Node.run nsd
+startInboxListener nsd = do
+    (lg,newNsd) <- Node.run nsd
     putStrLn "Log:"
     putStrLn $ unlines $ map show lg
+    startInboxListener newNsd
 
 run :: NodeStateDetails -> IO (Log, NodeStateDetails)
 run = runStateT (execWriterT updateState) -- runWriterT :: WriterT w m a -> m (a, w); w = Log, m = StateT NodeStateDetails IO, a = NodeStateDetails
@@ -39,16 +40,19 @@ run = runStateT (execWriterT updateState) -- runWriterT :: WriterT w m a -> m (a
 updateState :: NWS NodeStateDetails
 updateState = do
         nsd <- get
-        let currentState = currRole nsd
+        let currentRole = currRole nsd
             ibox = inbox nsd
-        logInfo $ "Role: " ++ show currentState
+        logInfo $ "Role: " ++ show currentRole
         cmd <- liftstm $ readTChan ibox
-        case currentState of
+        case currentRole of
           -- TODO add handlers for Leader and Candidate
           Follower -> do
             logInfo $ "Received: " ++ show cmd
-            liftM incTermIndex $ Follower.processCommand cmd
+            Follower.processCommand cmd
           Candidate -> do
+            logInfo $ "Received: " ++ show cmd
+            return nsd
+          Leader -> do
             logInfo $ "Received: " ++ show cmd
             return nsd
 

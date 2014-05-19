@@ -28,8 +28,8 @@ logInfo :: String -> NWS ()
 logInfo info = do
         nsd <- get
         let nodeid = nodeId nsd
-        let index = lastLogIndex nsd
-        let term = lastLogTerm nsd
+            index = lastLogIndex nsd
+            term = lastLogTerm nsd
         tell [((index,term),"-# " ++ fromJust nodeid ++  " #- " ++ info)]
 
 -- | Encapsulates the state of a Raft node
@@ -46,8 +46,11 @@ data NodeStateDetails = NodeStateDetails {
                         } deriving (Show)
 
 
-incTermIndex :: NodeStateDetails -> NodeStateDetails
-incTermIndex nsd = nsd{lastLogIndex=lastLogIndex nsd + 1, lastLogTerm=lastLogTerm nsd + 1}
+incTermIndex :: NodeStateDetails -> NWS NodeStateDetails
+incTermIndex nsd = do
+       let newNsd = nsd{lastLogIndex=lastLogIndex nsd + 1, lastLogTerm=lastLogTerm nsd + 1}
+       put newNsd
+       return newNsd
 
 instance Show (TChan Command) where
         show _ = "inbox"

@@ -2,6 +2,8 @@ module Main where
 
 import Types
 import Control.Concurrent
+import Control.Concurrent.Timer
+import Control.Concurrent.Suspend
 import Control.Concurrent.STM
 import qualified Data.Map as Map
 import Node
@@ -23,8 +25,14 @@ main = do
         mapM_ (startNode connectionMap) (zip nodes ports)
 
         -- Send some test commands
-        m <- readTVarIO connectionMap
-        sendCommand AcceptClientReq (fromJust $ Map.lookup (head nodes) m)
+        --m <- readTVarIO connectionMap
+        --sendCommand AcceptClientReq (fromJust $ Map.lookup (head nodes) m)
+
+        --TODO: Here we should actually have an infinite loop that looks at
+        --incoming messages
+        tVar <- newEmptyMVar
+        forkIO (do oneShotTimer (putMVar tVar True) (sDelay 4); return ()) --TODO randomize this duration -- TODO: make it configurable
+        void $ takeMVar tVar -- wait for election timeout to expire
 
         --sanity check
         --putStr $ unlines $ map show $ Map.keys m
