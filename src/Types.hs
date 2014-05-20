@@ -44,6 +44,7 @@ data NodeStateDetails = NodeStateDetails {
                           followerList :: [NodeId], -- ^ List of NodeIds of this node's followers
                           lastLogIndex :: Index, -- ^ The last index in the log written thus far
                           lastLogTerm :: Term, -- ^ The last term in the log written thus far
+                          currTerm :: Term, -- ^ The latest term seen by this node
                           nodeId :: NodeId,  -- ^ The id of this node
                           inbox :: TChan Command,
                           cMap :: ConnectionMap
@@ -52,7 +53,7 @@ data NodeStateDetails = NodeStateDetails {
 
 incTerm :: NodeStateDetails -> NWS NodeStateDetails
 incTerm nsd = do
-       let newNsd = nsd{lastLogIndex=lastLogIndex nsd + 1}
+       let newNsd = nsd{currTerm=currTerm nsd + 1}
        put newNsd
        return newNsd
 
@@ -105,25 +106,23 @@ data Command =
     -- 5.4.1 candidate includes its state. Used at follower end to determine if the follower is more
     -- "up-to-date" than the candidate. See RejectVote definition to see how "up-to-date" is
     -- determined
-    RequestVotes NodeId LogState |
+    RequestVotes Term NodeId LogState |
 
     -- 5.4.1 sent by follower to candidate in response to RequestVotes if its log is more up to date than
     -- the candidate's. Up-to-dateness is determined using the following two rules:
     -- a. the log with the larger term in its last entry is more up to date
     -- b. if both logs have the same number of entries, the longer log (i,e., larger index) is more up to date
-    RejectVote |
-
-    -- sent by followers to candidates.
-    -- A candidate votes first for itself and hence will never give out a vote to anyone else
-    GiveVote |
+    -- The response consists of the current term at the receiver and a Bool
+    -- indicating whether the vote was granted.
+    RespondRequestVotes Term Bool |
 
     -- sent by leader to its followers
     -- 2nd arg: highest index so far committed
     -- 3rd arg: (index, term) of previous log entry. Used for log consistency check at follower end
-    AppendEntry Index LogState |
+    AppendEntries Term NodeId LogState Log Index |
 
     -- sent by follower to leader in response to AppendEntry if log consistency check fails
-    RejectAppendEntry |
+    RespondAppendEntries Term Bool |
 
     -- sent by client to leader. if the node that receives this is not the leader, it forwards it
     -- to the leader.

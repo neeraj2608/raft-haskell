@@ -20,12 +20,7 @@ import Control.Monad.State
 import Control.Monad.Writer
 import Control.Concurrent.STM
 import Follower
-import Control.Concurrent
-import Control.Concurrent.Timer
-import Control.Concurrent.Suspend
-import Text.Printf
-import System.Time
-import Data.Maybe (fromJust)
+import Candidate
 
 startInboxListener :: NodeStateDetails -> IO ()
 startInboxListener nsd = do
@@ -45,37 +40,11 @@ updateState = do
             ibox = inbox nsd
         cmd <- liftstm $ tryReadTChan ibox
         case currentRole of
-          -- TODO add handlers for Leader and Candidate
+          -- TODO add handlers for Leader
           Follower -> do
             Follower.processCommand cmd
           Candidate -> do
-            --logInfo $ "Received: " ++ show cmd
-            Node.processCommand cmd
-            return nsd
+            Candidate.processCommand cmd
           Leader -> do
             --logInfo $ "Received: " ++ show cmd
             return nsd
-
--- TODO: move this to the Candidate module
-processCommand :: Maybe Command -> NWS NodeStateDetails
-processCommand cmd = do
-    case cmd of
-        Just StartCanvassing -> do
-            get >>= incTerm >>= \nsd -> do --increment current term
-                logInfo $ "Role: " ++ (show $ currRole nsd)
-                logInfo "Increment current term"
-                logInfo "Vote for self"
-                --vote for self
-                let newNsd = nsd{votedFor=(nodeId nsd)}
-                --broadcast requestvote rpc
-                logInfo "Broadcasting RequestVote RPC"
-                liftio $ broadCastExceptSelf -- exclude self from the broadcast
-                    (RequestVotes (nodeId nsd) (lastLogIndex nsd, lastLogTerm nsd)) -- include log index and current term
-                    (cMap nsd)
-                    (nodeId nsd)
-                return newNsd
-        Just (RequestVotes _ _) -> get >>= return -- a candidate always votes for itself; hence nothing to do
-        Just _ -> get >>= \nsd -> do
-            logInfo $ printf "Invalid command: %s %s" ((show . currRole) nsd) (show $ fromJust cmd)
-            return nsd
-        Nothing -> get >>= return

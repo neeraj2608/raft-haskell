@@ -39,6 +39,6 @@ startNode connectionMap nodePort = void $ forkIO $ uncurry initNode nodePort con
 initNode :: Node -> Port -> ConnectionMap -> IO ()
 initNode node _ m = do
         ibox <- newTChanIO
-        let initState = NodeStateDetails Follower 0 Nothing Nothing [] 0 0 (getId node) ibox m
+        let initState = NodeStateDetails Follower 0 Nothing Nothing [] 0 0 0 (getId node) ibox m
         atomically $ modifyTVar m (Map.insert (getId node) ibox)
         void $ forkIO $ Node.startInboxListener initState -- loop continuously and atomically check ibox for messages
