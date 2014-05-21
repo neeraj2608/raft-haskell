@@ -5,16 +5,18 @@ import Control.Monad.State
 import Control.Concurrent.STM
 import Text.Printf
 import Data.Maybe (fromJust)
+import qualified Data.Map as Map
 
 processCommand :: Maybe Command -> NWS NodeStateDetails
-processCommand cmd = do
+processCommand cmd =
     case cmd of
-        Just StartCanvassing -> do
+        Just StartCanvassing ->
             get >>= \nsd -> do
-                logInfo $ "Role: " ++ (show $ currRole nsd)
+                logInfo $ "Role: " ++ show (currRole nsd)
+                logInfo $ "Received: " ++ show (fromJust cmd)
                 logInfo "Vote for self"
                 --vote for self
-                let newNsd = nsd{votedFor=(nodeId nsd)}
+                let newNsd = nsd{votedFor=nodeId nsd}
                 put newNsd
                 --broadcast requestvote rpc
                 logInfo "Broadcasting RequestVote RPC"
@@ -22,38 +24,38 @@ processCommand cmd = do
                     (RequestVotes (currTerm nsd) (nodeId nsd) (lastLogIndex nsd, lastLogTerm nsd)) -- include log index and current term
                     (cMap nsd)
                     (nodeId nsd)
-                -- Start a randomized timeout
-                -- if at the end of that time, we have not received any
-                -- responses or we have not received a clear majoity,
-                -- restart the election. Note that if someone else had
-                -- received a majority, they would have sent us an
-                -- AppendEntries RPC and our inbox wouldn't be empty. The
-                -- only case in which our inbox can be empty is either no
-                -- one responds or no one else got a majority vote
-                createTimeout
-                let ibox = inbox nsd
-                empty <- liftstm $ isEmptyTChan ibox
-                if empty
-                    then do -- nothing in our inbox, restart election
-                        logInfo $ "Inbox empty. Restarting election..."
-                        liftstm $ writeTChan ibox StartCanvassing
-                        return newNsd
-                    else do
-                        logInfo "Something waiting in inbox"
-                        return newNsd -- process whatever is in our inbox
-        Just (RequestVotes _ _ _) -> get >>= return -- a candidate always votes for itself; hence nothing to do
-        Just (RespondRequestVotes term voteGranted) -> get >>= \nsd -> do
-           if (currTerm nsd < term) -- we're out of date, revert to Follower
-              then do
+                return newNsd -- jump into the Nothing clause and start the timeout
+        Just RequestVotes{} -> get -- a candidate always votes for itself; hence nothing to do
+        Just (RespondRequestVotes term voteGranted nid) -> get >>= \nsd -> do
+           logInfo $ "Role: " ++ show (currRole nsd)
+           logInfo $ "Received: " ++ show (fromJust cmd)
+           if currTerm nsd < term
+              then do -- we're out of date, revert to Follower
+                  logInfo "Reverting to Follower"
                   let newNsd = nsd {currRole=Follower, currTerm=term}
                   put newNsd
                   return newNsd
-              else undefined -- TODO: see if we have majority yet.
-                             --       if no, keep waiting (this will be
-                             --       handled by the Nothing clause)
-                             --       if yes, become leader and send out a heartbeat
-        Just (AppendEntries lTerm _ _ _ _) -> get >>= \nsd -> do
-           if (currTerm nsd < lTerm) -- there's another leader ahead of us, revert to Follower
+              else if voteGranted
+                  then do
+                      logInfo $ "Got vote from " ++ fromJust nid
+                      let newNsd = nsd {followerList=nid:followerList nsd} -- update followers list
+                      put newNsd
+                      maj <- liftio $ hasMajority newNsd
+                      if maj
+                          then do -- if yes, become leader and send out a heartbeat
+                              logInfo "Received majority; switching to Leader"
+                              let ibox = inbox newNsd
+                              liftstm $ writeTChan ibox (AppendEntries (currTerm newNsd) (nodeId newNsd) (lastLogIndex newNsd-1, lastLogTerm newNsd-1) [] 0)
+                              put newNsd{currRole=Leader}
+                              get
+                          else do
+                              logInfo "No majority yet"
+                              return newNsd -- if no, start another timeout and wait (this will be handled by the Nothing clause)
+                  else do
+                      logInfo $ "Reject vote from " ++ fromJust nid
+                      return nsd  -- rejected; start another timeout and wait (this will be handled by the Nothing clause)
+        Just (AppendEntries lTerm _ _ _ _) -> get >>= \nsd ->
+           if currTerm nsd < lTerm -- there's another leader ahead of us, revert to Follower
               then do
                   let newNsd = nsd {currRole=Follower, currTerm=lTerm}
                   put newNsd
@@ -62,4 +64,30 @@ processCommand cmd = do
         Just _ -> get >>= \nsd -> do
             logInfo $ printf "Invalid command: %s %s" ((show . currRole) nsd) (show $ fromJust cmd)
             return nsd
-        Nothing -> get >>= return
+        Nothing -> get >>= \nsd -> do
+                -- Start a randomized timeout
+                -- if at the end of that time, we have not received any
+                -- responses or we have not received a clear majoity,
+                -- restart the election. Note that if someone else had
+                -- received a majority, they would have sent us an
+                -- AppendEntries RPC and our inbox wouldn't be empty. The
+                -- only case in which our inbox can be empty is either no
+                -- one responds (or responds but it gets lost on the way)
+                -- or no one else got a majority vote
+                createTimeout
+                let ibox = inbox nsd
+                empty <- liftstm $ isEmptyTChan ibox
+                if empty
+                    then do -- nothing in our inbox, restart election
+                        logInfo "Inbox empty. Restarting election..."
+                        liftstm $ writeTChan ibox StartCanvassing
+                        return nsd
+                    else do
+                        logInfo "Something waiting in inbox"
+                        return nsd -- process whatever is in our inbox
+
+hasMajority :: NodeStateDetails -> IO Bool
+hasMajority nsd = do
+        m <- atomically $ readTVar (cMap nsd)
+        return (length (followerList nsd) + 1 > (length (Map.keys m) `div` 2)) -- the +1 is for the candidate itself
+

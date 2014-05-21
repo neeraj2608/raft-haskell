@@ -11,6 +11,7 @@ import System.Time
 import qualified Data.Map as Map
 import Data.Maybe (fromJust)
 import Text.Printf
+import System.Timeout
 
 data Role = Leader |
             Follower |
@@ -93,13 +94,15 @@ sendCommand' cmd ibox =
 
 createTimeout :: NWS ()
 createTimeout = do
-    tVar <- liftio newEmptyMVar
-    liftio $ forkIO (do oneShotTimer (putMVar tVar True) (sDelay 2); return ()) --TODO randomize this duration -- TODO: make it configurable
+    nsd <- get
+    result <- liftio $ timeout 500000 (atomically $ peekTChan (inbox nsd))
+    --tVar <- liftio newEmptyMVar
+    --liftio $ forkIO (do oneShotTimer (putMVar tVar True) (sDelay 2); return ()) --TODO randomize this duration -- TODO: make it configurable
     startTime <- liftio getClockTime
     logInfo $ "Waiting... " ++ show startTime
-    liftio $ takeMVar tVar -- wait for election timeout to expire
+    --liftio $ takeMVar tVar -- wait for election timeout to expire
     endTime <- liftio getClockTime
-    logInfo $ printf "Election time expired " ++ show endTime
+    logInfo $ printf "Election time expired " ++ show endTime ++ " " ++ show result
 
 type NodeId = Maybe String
 
@@ -128,7 +131,7 @@ data Command =
     -- b. if both logs have the same number of entries, the longer log (i,e., larger index) is more up to date
     -- The response consists of the current term at the receiver and a Bool
     -- indicating whether the vote was granted.
-    RespondRequestVotes Term Bool |
+    RespondRequestVotes Term Bool NodeId |
 
     -- sent by leader to its followers
     -- 2nd arg: highest index so far committed

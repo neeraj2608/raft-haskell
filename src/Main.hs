@@ -27,7 +27,7 @@ main = do
         -- TODO: Here we should actually have an infinite loop that looks at
         -- incoming messages on this port
         tVar <- newEmptyMVar
-        forkIO (do oneShotTimer (putMVar tVar True) (sDelay 6); return ())
+        forkIO (do oneShotTimer (putMVar tVar True) (sDelay 12); return ())
         void $ takeMVar tVar
 
         --sanity check

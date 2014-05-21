@@ -46,5 +46,5 @@ updateState = do
           Candidate -> do
             Candidate.processCommand cmd
           Leader -> do
-            --logInfo $ "Received: " ++ show cmd
+            logInfo $ "Leader Received: " ++ show cmd
             return nsd

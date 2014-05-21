@@ -34,7 +34,7 @@ processCommand cmd =
                     then do -- our current term is more than the candidate's
                             -- reject the RequestVote
                         logInfo $ "Reject vote: our currTerm " ++ show (currTerm nsd) ++ "> " ++ fromJust cid ++ "'s currTerm" ++ show cTerm
-                        liftio $ sendCommand (RespondRequestVotes (currTerm nsd) False) cid (cMap nsd)
+                        liftio $ sendCommand (RespondRequestVotes (currTerm nsd) False (nodeId nsd)) cid (cMap nsd)
                         return nsd
                     else
                         if cTerm > currTerm nsd
@@ -57,7 +57,7 @@ processCommand cmd =
                                                             -- accept the RequestVote
                                                         logInfo $ "Accept vote: our currTerm " ++ show (currTerm n)
                                                                   ++ " <= " ++ fromJust cid ++ "'s currTerm " ++ show cTerm
-                                                        liftio $ sendCommand (RespondRequestVotes (currTerm n) True) cid (cMap n)
+                                                        liftio $ sendCommand (RespondRequestVotes (currTerm n) True (nodeId n)) cid (cMap n)
                                                         let newNsd = n{votedFor=cid} -- update votedFor
                                                         put newNsd
                                                         return newNsd
@@ -65,7 +65,7 @@ processCommand cmd =
                               rejectCandidate :: NodeStateDetails -> NWS NodeStateDetails
                               rejectCandidate n = do -- we're more up to date than the candidate that requested a vote
                                                     -- reject the RequestVote
-                                         liftio $ sendCommand (RespondRequestVotes (currTerm n) False) cid (cMap n)
+                                         liftio $ sendCommand (RespondRequestVotes (currTerm n) False (nodeId n)) cid (cMap n)
                                          return n
         Just _ -> get >>= \nsd -> do
             logInfo $ "Role: " ++ show (currRole nsd)
