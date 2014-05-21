@@ -3,7 +3,11 @@ module Types where
 
 import Control.Monad.State
 import Control.Monad.Writer
+import Control.Concurrent
+import Control.Concurrent.Timer
+import Control.Concurrent.Suspend
 import Control.Concurrent.STM
+import System.Time
 import qualified Data.Map as Map
 import Data.Maybe (fromJust)
 import Text.Printf
@@ -73,19 +77,29 @@ broadCast cmd connectionMap = do
         m <- readTVarIO connectionMap
         mapM_ (sendCommand' cmd) $ Map.elems m
 
+-- | Send a command to a node
 sendCommand :: Command -> NodeId -> ConnectionMap -> IO ()
 sendCommand cmd nid cm = do
         m <- atomically $ readTVar cm
-        case (Map.lookup nid m) of
+        case Map.lookup nid m of
             Nothing -> error $ "No mapping for node Id " ++ fromJust nid
             Just tChan -> sendCommand' cmd tChan
 
 -- | Send a command to a node's inbox
--- TODO: eventually change the signature to Command -> Node -> IO ()
 sendCommand' :: Command -> TChan Command -> IO ()
-sendCommand' cmd ibox = do
+sendCommand' cmd ibox =
         --printf "Sending command: %s\n" $ show cmd
         atomically $ writeTChan ibox cmd
+
+createTimeout :: NWS ()
+createTimeout = do
+    tVar <- liftio newEmptyMVar
+    liftio $ forkIO (do oneShotTimer (putMVar tVar True) (sDelay 2); return ()) --TODO randomize this duration -- TODO: make it configurable
+    startTime <- liftio getClockTime
+    logInfo $ "Waiting... " ++ show startTime
+    liftio $ takeMVar tVar -- wait for election timeout to expire
+    endTime <- liftio getClockTime
+    logInfo $ printf "Election time expired " ++ show endTime
 
 type NodeId = Maybe String
 

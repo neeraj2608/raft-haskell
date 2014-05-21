@@ -2,12 +2,8 @@ module Candidate where
 
 import Types
 import Control.Monad.State
-import Control.Concurrent
-import Control.Concurrent.Timer
-import Control.Concurrent.Suspend
 import Control.Concurrent.STM
 import Text.Printf
-import System.Time
 import Data.Maybe (fromJust)
 
 processCommand :: Maybe Command -> NWS NodeStateDetails
@@ -34,13 +30,7 @@ processCommand cmd = do
                 -- AppendEntries RPC and our inbox wouldn't be empty. The
                 -- only case in which our inbox can be empty is either no
                 -- one responds or no one else got a majority vote
-                tVar <- liftio newEmptyMVar
-                liftio $ forkIO (do oneShotTimer (putMVar tVar True) (sDelay 2); return ()) --TODO randomize this duration -- TODO: make it configurable
-                startTime <- liftio getClockTime
-                logInfo $ "Waiting... " ++ show startTime
-                liftio $ takeMVar tVar -- wait for election timeout to expire
-                endTime <- liftio getClockTime
-                logInfo $ printf "Election time expired " ++ show endTime
+                createTimeout
                 let ibox = inbox nsd
                 empty <- liftstm $ isEmptyTChan ibox
                 if empty
