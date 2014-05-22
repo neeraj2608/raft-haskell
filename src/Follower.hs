@@ -32,7 +32,7 @@ processCommand cmd =
                 logInfo $ "Role: " ++ show (currRole nsd)
                 logInfo $ "Received: " ++ show (fromJust cmd)
                 if cTerm < currTerm nsd
-                    then do -- our current term is more than the candidate's
+                    then do -- §5.2 our current term is more than the candidate's
                             -- reject the RequestVote
                         logInfo $ "Reject vote: our currTerm " ++ show (currTerm nsd) ++ "> " ++ fromJust cid ++ "'s currTerm" ++ show cTerm
                         liftio $ sendCommand (RespondRequestVotes (currTerm nsd) False (nodeId nsd)) cid (cMap nsd)
@@ -54,7 +54,7 @@ processCommand cmd =
                                                         logInfo $ "Reject vote: our currTerm " ++ show (currTerm n) ++ " > "
                                                                   ++ fromJust cid ++ "'s currTerm " ++ show cTerm
                                                         rejectCandidate n
-                                                    else do -- we're less up to date than the candidate that requested a vote
+                                                    else do -- §5.2 we're less up to date than the candidate that requested a vote
                                                             -- accept the RequestVote
                                                         logInfo $ "Accept vote: our currTerm " ++ show (currTerm n)
                                                                   ++ " <= " ++ fromJust cid ++ "'s currTerm " ++ show cTerm
@@ -64,7 +64,7 @@ processCommand cmd =
                                                         return newNsd
 
                               rejectCandidate :: NodeStateDetails -> NWS NodeStateDetails
-                              rejectCandidate n = do -- we're more up to date than the candidate that requested a vote
+                              rejectCandidate n = do -- §5.2 we're more up to date than the candidate that requested a vote
                                                     -- reject the RequestVote
                                          liftio $ sendCommand (RespondRequestVotes (currTerm n) False (nodeId n)) cid (cMap n)
                                          return n
@@ -98,7 +98,7 @@ processCommand cmd =
 
 -- | Decides if the node with the state passed in (first arg) is more
 -- up to date than the node with the log state passed in (second arg)
--- 5.4.1 Up-to-dateness is determined using the following two rules:
+-- §5.4.1 Up-to-dateness is determined using the following two rules:
 -- a. the log with the larger term in its last entry is more up to date
 -- b. if both logs have the same number of entries, the longer log (i,e., larger index) is more up to date
 isMoreUpToDate :: NodeStateDetails -> LogState -> Bool

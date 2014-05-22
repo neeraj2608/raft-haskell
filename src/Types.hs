@@ -52,7 +52,7 @@ data Command =
     -- determined
     RequestVotes Term NodeId LogState |
 
-    -- 5.4.1 sent by follower to candidate in response to RequestVotes if its log is more up to date than
+    -- §5.4.1 sent by follower to candidate in response to RequestVotes if its log is more up to date than
     -- the candidate's. Up-to-dateness is determined using the following two rules:
     -- a. the log with the larger term in its last entry is more up to date
     -- b. if both logs have the same number of entries, the longer log (i,e., larger index) is more up to date

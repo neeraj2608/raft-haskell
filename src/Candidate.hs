@@ -68,7 +68,7 @@ processCommand cmd =
                       put newNsd
                       maj <- liftio $ hasMajority newNsd
                       if maj
-                          then do -- 5.2 if yes, become leader and send out a heartbeat
+                          then do -- §5.2 if yes, become leader and send out a heartbeat
                               writeHeartbeat newNsd
                               logInfo "Received majority; updating follower nextIndex + switching to Leader"
                               let follList = map (\x -> (fst x, lastLogIndex newNsd + 1)) (followerList newNsd)
@@ -76,13 +76,13 @@ processCommand cmd =
                               get
                           else do
                               logInfo "No majority yet"
-                              return newNsd -- 5.2 if no, start another timeout and wait (this will be handled by the Nothing clause)
+                              return newNsd -- §5.2 if no, start another timeout and wait (this will be handled by the Nothing clause)
                   else do
                       logInfo $ "Reject vote from " ++ fromJust nid
-                      return nsd  -- 5.2 rejected; start another timeout and wait (this will be handled by the Nothing clause)
+                      return nsd  -- §5.2 rejected; start another timeout and wait (this will be handled by the Nothing clause)
 
         Just (AppendEntries lTerm lId _ _ _) -> get >>= \nsd ->
-           if currTerm nsd < lTerm -- 5.2 there's another leader ahead of us, revert to Follower
+           if currTerm nsd < lTerm -- §5.2 there's another leader ahead of us, revert to Follower
               then do
                   logInfo $ "Another leader " ++ fromJust lId ++ " found"
                   let newNsd = nsd {currRole=Follower, currTerm=lTerm}
@@ -91,8 +91,10 @@ processCommand cmd =
                   -- That is not a problem, however, as the leader will keep sending AppendEntries until it hears back from all
                   -- its followers.
                   return newNsd
-              else do -- 5.2 we're ahead of the other guy. reject stale RPC and continue as candidate
+              else do -- §5.2 we're ahead of the other guy. reject stale RPC and continue as candidate
                   logInfo "Received stale AppendEntries RPC. Reject and continue as candidate"
+                  -- note that here we do actually send a response back so the "leader" can update his current term and revert
+                  -- to a follower
                   liftio $ sendCommand (RespondAppendEntries (currTerm nsd) False) lId (cMap nsd)
                   return nsd
 
