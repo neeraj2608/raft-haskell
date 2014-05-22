@@ -12,7 +12,7 @@ processCommand cmd =
         --start election timeout
         Nothing -> get >>= \nsd -> do
             logInfo $ "Role: " ++ show (currRole nsd)
-            createTimeout
+            createElectionTimeout
             let ibox = inbox nsd
             empty <- liftstm $ isEmptyTChan ibox
             if empty -- nothing in our inbox, switch to candidate

@@ -3,9 +3,6 @@ module Types where
 
 import Control.Monad.State
 import Control.Monad.Writer
-import Control.Concurrent
-import Control.Concurrent.Timer
-import Control.Concurrent.Suspend
 import Control.Concurrent.STM
 import System.Time
 import qualified Data.Map as Map
@@ -68,6 +65,7 @@ incTermIndex nsd = do
        put newNsd
        return newNsd
 
+-- | broadcast to all nodes except yourself
 broadCastExceptSelf :: Command -> ConnectionMap -> NodeId -> IO ()
 broadCastExceptSelf cmd connectionMap nid = do
         m <- readTVarIO connectionMap
@@ -92,17 +90,36 @@ sendCommand' cmd ibox =
         --printf "Sending command: %s\n" $ show cmd
         atomically $ writeTChan ibox cmd
 
-createTimeout :: NWS ()
-createTimeout = do
+-- | Used to broadcast heartbeats
+-- note that broadcast time << election time << MTBF
+-- TODO: randomize these durations
+createBroadcastTimeout :: NWS ()
+createBroadcastTimeout = createTimeout 250000
+
+-- | Used for election timeouts
+-- note that broadcast time << election time << MTBF
+-- TODO: randomize these durations
+createElectionTimeout :: NWS ()
+createElectionTimeout = createTimeout 500000
+
+createTimeout :: Int -> NWS()
+createTimeout duration = do
     nsd <- get
-    result <- liftio $ timeout 500000 (atomically $ peekTChan (inbox nsd))
-    --tVar <- liftio newEmptyMVar
-    --liftio $ forkIO (do oneShotTimer (putMVar tVar True) (sDelay 2); return ()) --TODO randomize this duration -- TODO: make it configurable
+    result <- liftio $ timeout duration (atomically $ peekTChan (inbox nsd))
     startTime <- liftio getClockTime
     logInfo $ "Waiting... " ++ show startTime
-    --liftio $ takeMVar tVar -- wait for election timeout to expire
     endTime <- liftio getClockTime
-    logInfo $ printf "Election time expired " ++ show endTime ++ " " ++ show result
+    logInfo $ printf "Timeout expired " ++ show endTime ++ " " ++ show result
+
+writeHeartbeat :: NodeStateDetails -> NWS ()
+writeHeartbeat nsd = do
+    let ibox = inbox nsd
+    liftstm $ writeTChan ibox
+             (AppendEntries (currTerm nsd)
+              (nodeId nsd)
+              (lastLogIndex nsd-1, lastLogTerm nsd-1)
+              []
+              0)
 
 type NodeId = Maybe String
 

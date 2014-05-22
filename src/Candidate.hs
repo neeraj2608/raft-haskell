@@ -43,9 +43,8 @@ processCommand cmd =
                       maj <- liftio $ hasMajority newNsd
                       if maj
                           then do -- if yes, become leader and send out a heartbeat
+                              writeHeartbeat newNsd
                               logInfo "Received majority; switching to Leader"
-                              let ibox = inbox newNsd
-                              liftstm $ writeTChan ibox (AppendEntries (currTerm newNsd) (nodeId newNsd) (lastLogIndex newNsd-1, lastLogTerm newNsd-1) [] 0)
                               put newNsd{currRole=Leader}
                               get
                           else do
@@ -54,9 +53,10 @@ processCommand cmd =
                   else do
                       logInfo $ "Reject vote from " ++ fromJust nid
                       return nsd  -- rejected; start another timeout and wait (this will be handled by the Nothing clause)
-        Just (AppendEntries lTerm _ _ _ _) -> get >>= \nsd ->
+        Just (AppendEntries lTerm lId _ _ _) -> get >>= \nsd ->
            if currTerm nsd < lTerm -- there's another leader ahead of us, revert to Follower
               then do
+                  logInfo $ "Another leader " ++ fromJust lId ++ " found"
                   let newNsd = nsd {currRole=Follower, currTerm=lTerm}
                   put newNsd
                   return newNsd
@@ -74,7 +74,7 @@ processCommand cmd =
                 -- only case in which our inbox can be empty is either no
                 -- one responds (or responds but it gets lost on the way)
                 -- or no one else got a majority vote
-                createTimeout
+                createElectionTimeout
                 let ibox = inbox nsd
                 empty <- liftstm $ isEmptyTChan ibox
                 if empty
@@ -90,4 +90,3 @@ hasMajority :: NodeStateDetails -> IO Bool
 hasMajority nsd = do
         m <- atomically $ readTVar (cMap nsd)
         return (length (followerList nsd) + 1 > (length (Map.keys m) `div` 2)) -- the +1 is for the candidate itself
-

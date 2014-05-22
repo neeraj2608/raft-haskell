@@ -21,6 +21,7 @@ import Control.Monad.Writer
 import Control.Concurrent.STM
 import Follower
 import Candidate
+import Leader
 
 startInboxListener :: NodeStateDetails -> IO ()
 startInboxListener nsd = do
@@ -40,11 +41,6 @@ updateState = do
             ibox = inbox nsd
         cmd <- liftstm $ tryReadTChan ibox
         case currentRole of
-          -- TODO add handlers for Leader
-          Follower -> do
-            Follower.processCommand cmd
-          Candidate -> do
-            Candidate.processCommand cmd
-          Leader -> do
-            logInfo $ "Leader Received: " ++ show cmd
-            return nsd
+          Follower -> Follower.processCommand cmd
+          Candidate -> Candidate.processCommand cmd
+          Leader -> Leader.processCommand cmd
