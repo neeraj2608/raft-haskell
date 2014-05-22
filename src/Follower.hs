@@ -67,6 +67,11 @@ processCommand cmd =
                                                     -- reject the RequestVote
                                          liftio $ sendCommand (RespondRequestVotes (currTerm n) False (nodeId n)) cid (cMap n)
                                          return n
+        Just (AppendEntries lTerm lId lLogState lEntries lCommitIndex)
+            | null lEntries -> get >>= \nsd -> do
+                logInfo $ "Received heartbeat from " ++ (fromJust lId)
+                return nsd
+            | otherwise -> get
         Just _ -> get >>= \nsd -> do
             logInfo $ "Role: " ++ show (currRole nsd)
             logInfo $ "Received: " ++ show (fromJust cmd)
