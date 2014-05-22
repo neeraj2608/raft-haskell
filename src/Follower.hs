@@ -71,10 +71,15 @@ processCommand cmd =
             | null lEntries -> get >>= \nsd -> do
                 logInfo $ "Received heartbeat from " ++ (fromJust lId)
                 return nsd
-            | otherwise -> get
+            | otherwise -> get >>= \nsd -> do
+                if (currTerm nsd) > lTerm
+                    then do
+                        logInfo $ "Reject stale AppendEntries from " ++ (fromJust lId)
+                        liftio $ sendCommand (RespondAppendEntries (currTerm nsd) False) lId (cMap nsd)
+                        return nsd
+                    else return nsd
         Just _ -> get >>= \nsd -> do
             logInfo $ "Role: " ++ show (currRole nsd)
-            logInfo $ "Received: " ++ show (fromJust cmd)
             logInfo $ printf "Invalid command: %s %s" ((show . currRole) nsd) (show $ fromJust cmd)
             return nsd
 

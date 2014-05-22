@@ -13,8 +13,8 @@ import Control.Monad
 main :: IO ()
 main = do
         connectionMap <- newTVarIO Map.empty
-        let nodeIds = ["A", "B"] -- , "B", "C"] -- this should ideally come from a config file
-        let ports = ["2344", "2345"] -- , "2345", "2346"] -- this should ideally come from a config file
+        let nodeIds = ["A", "B"] -- , "C", "D", "E"] -- this should ideally come from a config file
+        let ports = ["2344", "2345"] -- , "2346", "2347", "2348"] -- this should ideally come from a config file
         let nodes = map (Node . Just) nodeIds
 
         -- Init all the nodes
