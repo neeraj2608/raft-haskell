@@ -4,23 +4,75 @@ module Types where
 import Control.Monad.State
 import Control.Monad.Writer
 import Control.Concurrent.STM
+import Text.Printf
+import System.Timeout
 import System.Time
 import qualified Data.Map as Map
 import Data.Maybe (fromJust)
-import Text.Printf
-import System.Timeout
+
+type NWS = WriterT Log (StateT NodeStateDetails IO)
+type Port = String
+type ConnectionMap = TVar (Map.Map NodeId (TChan Command))
+type NodeId = Maybe String
+type Index = Integer
+type Term = Integer
+type LogState = (Index, Term)
+type Log = [(LogState, String)]
+type StateMap = Map.Map Node NodeStateDetails
 
 data Role = Leader |
             Follower |
             Candidate
             deriving (Show, Eq)
 
-type NWS = WriterT Log (StateT NodeStateDetails IO)
-type Port = String
-type ConnectionMap = TVar (Map.Map NodeId (TChan Command))
+-- | Encapsulates the state of a Raft node
+data NodeStateDetails = NodeStateDetails {
+                          currRole :: Role, -- ^ Current role of this node
+                          commitIndex :: Integer, -- ^ Used by leader. latest log index known to be safely committed
+                          currLeaderId :: NodeId, -- ^ Id of the current leader. Used by followers to redirect requests sent to them by clients
+                          votedFor :: NodeId, -- ^ Id of the last node we voted for
+                          followerList :: [(NodeId, Index)], -- ^ List of NodeIds + nextIndex for this node's followers
+                          lastLogIndex :: Index, -- ^ The last index in the log written thus far
+                          lastLogTerm :: Term, -- ^ The last term in the log written thus far
+                          currTerm :: Term, -- ^ The latest term seen by this node
+                          nodeId :: NodeId,  -- ^ The id of this node
+                          inbox :: TChan Command,
+                          cMap :: ConnectionMap
+                        }
 
-toNWS :: NodeStateDetails -> NWS ()
-toNWS = put
+data Node = Node {getId :: NodeId} deriving (Ord, Eq, Show)
+
+data Command =
+    -- used to make candidates kick off leader election
+    StartCanvassing |
+
+    -- broadcast by candidates
+    -- 5.4.1 candidate includes its state. Used at follower end to determine if the follower is more
+    -- "up-to-date" than the candidate. See RejectVote definition to see how "up-to-date" is
+    -- determined
+    RequestVotes Term NodeId LogState |
+
+    -- 5.4.1 sent by follower to candidate in response to RequestVotes if its log is more up to date than
+    -- the candidate's. Up-to-dateness is determined using the following two rules:
+    -- a. the log with the larger term in its last entry is more up to date
+    -- b. if both logs have the same number of entries, the longer log (i,e., larger index) is more up to date
+    -- The response consists of the current term at the receiver and a Bool
+    -- indicating whether the vote was granted.
+    RespondRequestVotes Term Bool NodeId |
+
+    -- sent by leader to its followers
+    AppendEntries Term NodeId LogState Log Index |
+
+    -- sent by follower to leader in response to AppendEntry if log consistency check fails
+    RespondAppendEntries Term Bool |
+
+    -- sent by client to leader. if the node that receives this is not the leader, it forwards it
+    -- to the leader.
+    -- TODO: have some data as an argument?
+    ClientReq |
+
+    RespondClientReq
+    deriving (Show)
 
 liftio :: IO a -> WriterT Log (StateT NodeStateDetails IO) a
 liftio = lift . lift
@@ -36,22 +88,6 @@ logInfo info = do
             index = lastLogIndex nsd
             term = lastLogTerm nsd
         tell [((index,term),"-# " ++ fromJust nodeid ++  " #- " ++ info)]
-
--- | Encapsulates the state of a Raft node
-data NodeStateDetails = NodeStateDetails {
-                          currRole :: Role, -- ^ Current role of this node
-                          commitIndex :: Integer,
-                          curLeaderId :: NodeId, -- ^  Id of the current leader. Used by followers to redirect requests sent to them by clients
-                          votedFor :: NodeId, -- ^ Id of the last node we voted for
-                          followerList :: [NodeId], -- ^ List of NodeIds of this node's followers
-                          lastLogIndex :: Index, -- ^ The last index in the log written thus far
-                          lastLogTerm :: Term, -- ^ The last term in the log written thus far
-                          currTerm :: Term, -- ^ The latest term seen by this node
-                          nodeId :: NodeId,  -- ^ The id of this node
-                          inbox :: TChan Command,
-                          cMap :: ConnectionMap
-                        }
-
 
 incTerm :: NodeStateDetails -> NWS NodeStateDetails
 incTerm nsd = do
@@ -117,51 +153,6 @@ writeHeartbeat nsd = do
     liftstm $ writeTChan ibox
              (AppendEntries (currTerm nsd)
               (nodeId nsd)
-              (lastLogIndex nsd-1, lastLogTerm nsd-1)
+              (lastLogIndex nsd, lastLogTerm nsd)
               []
               0)
-
-type NodeId = Maybe String
-
-data Node = Node {getId :: NodeId} deriving (Ord, Eq, Show)
-
-type Index = Integer
-type Term = Integer
-type LogState = (Index, Term)
-type Log = [(LogState, String)]
-
-type StateMap = Map.Map Node NodeStateDetails
-
-data Command =
-    -- used to make candidates kick off leader election
-    StartCanvassing |
-
-    -- broadcast by candidates
-    -- 5.4.1 candidate includes its state. Used at follower end to determine if the follower is more
-    -- "up-to-date" than the candidate. See RejectVote definition to see how "up-to-date" is
-    -- determined
-    RequestVotes Term NodeId LogState |
-
-    -- 5.4.1 sent by follower to candidate in response to RequestVotes if its log is more up to date than
-    -- the candidate's. Up-to-dateness is determined using the following two rules:
-    -- a. the log with the larger term in its last entry is more up to date
-    -- b. if both logs have the same number of entries, the longer log (i,e., larger index) is more up to date
-    -- The response consists of the current term at the receiver and a Bool
-    -- indicating whether the vote was granted.
-    RespondRequestVotes Term Bool NodeId |
-
-    -- sent by leader to its followers
-    -- 2nd arg: highest index so far committed
-    -- 3rd arg: (index, term) of previous log entry. Used for log consistency check at follower end
-    AppendEntries Term NodeId LogState Log Index |
-
-    -- sent by follower to leader in response to AppendEntry if log consistency check fails
-    RespondAppendEntries Term Bool |
-
-    -- sent by client to leader. if the node that receives this is not the leader, it forwards it
-    -- to the leader.
-    -- TODO: have some data as an argument?
-    AcceptClientReq |
-
-    RespondClientReq
-    deriving (Show)

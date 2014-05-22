@@ -26,6 +26,7 @@ processCommand cmd =
                 else do
                     logInfo "Something waiting in inbox"
                     return nsd
+
         Just (RequestVotes cTerm cid logState) ->
             get >>= \nsd -> do
                 logInfo $ "Role: " ++ show (currRole nsd)
@@ -67,17 +68,29 @@ processCommand cmd =
                                                     -- reject the RequestVote
                                          liftio $ sendCommand (RespondRequestVotes (currTerm n) False (nodeId n)) cid (cMap n)
                                          return n
-        Just (AppendEntries lTerm lId lLogState lEntries lCommitIndex)
+
+        Just (AppendEntries lTerm lId (prevLogIndex, prevLogTerm) lEntries lCommitIndex)
             | null lEntries -> get >>= \nsd -> do
                 logInfo $ "Received heartbeat from " ++ (fromJust lId)
-                return nsd
+                let newNsd = nsd{currLeaderId = lId} -- update leader Id
+                put newNsd
+                return newNsd
             | otherwise -> get >>= \nsd -> do
-                if (currTerm nsd) > lTerm
+                if lTerm < currTerm nsd
                     then do
                         logInfo $ "Reject stale AppendEntries from " ++ (fromJust lId)
                         liftio $ sendCommand (RespondAppendEntries (currTerm nsd) False) lId (cMap nsd)
                         return nsd
-                    else return nsd
+                    else return nsd --TODO: log consistency check
+
+        Just ClientReq -> get >>= \nsd -> do
+          case currLeaderId nsd of
+              Nothing -> return nsd
+              maybeLeaderId -> do
+                  logInfo $ "Forwarding client request to " ++ (fromJust maybeLeaderId)
+                  liftio $ sendCommand (RespondAppendEntries (currTerm nsd) False) maybeLeaderId (cMap nsd)
+                  return nsd
+
         Just _ -> get >>= \nsd -> do
             logInfo $ "Role: " ++ show (currRole nsd)
             logInfo $ printf "Invalid command: %s %s" ((show . currRole) nsd) (show $ fromJust cmd)

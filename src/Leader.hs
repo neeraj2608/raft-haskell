@@ -10,6 +10,7 @@ processCommand :: Maybe Command -> NWS NodeStateDetails
 processCommand cmd =
     case cmd of
         Just AppendEntries{} -> get >>= \nsd -> do
+            -- TODO: init nextIndex for each follower to lastLogIndex + 1
             --broadcast requestvote rpc
             logInfo "Broadcasting AppendEntries Heartbeat RPC"
             liftio $ broadCastExceptSelf -- exclude self from the broadcast
@@ -17,9 +18,13 @@ processCommand cmd =
                 (cMap nsd)
                 (nodeId nsd)
             return nsd -- jump into the Nothing clause and start the broadcast timeout
+
+        Just ClientReq -> get -- TODO: write entry to log, issue AppendEntries
+
         Just _ -> get >>= \nsd -> do
             logInfo $ printf "Invalid command: %s %s" ((show . currRole) nsd) (show $ fromJust cmd)
             return nsd
+
         Nothing -> get >>= \nsd -> do
                 -- Start a randomized timeout
                 -- Send out heartbeats in idle durations (idle == no client
