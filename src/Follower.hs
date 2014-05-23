@@ -79,7 +79,7 @@ processCommand cmd =
                 if lTerm < currTerm nsd
                     then do
                         logInfo $ "Reject stale AppendEntries from " ++ (fromJust lId)
-                        liftio $ sendCommand (RespondAppendEntries (currTerm nsd) False) lId (cMap nsd)
+                        liftio $ sendCommand (RespondAppendEntries (nodeId nsd) (lastLogIndex nsd) (currTerm nsd) False) lId (cMap nsd)
                         return nsd
                     else return nsd --TODO: log consistency check
 
@@ -88,7 +88,7 @@ processCommand cmd =
               Nothing -> return nsd
               maybeLeaderId -> do
                   logInfo $ "Forwarding client request to " ++ (fromJust maybeLeaderId)
-                  liftio $ sendCommand (RespondAppendEntries (currTerm nsd) False) maybeLeaderId (cMap nsd)
+                  liftio $ sendCommand (fromJust cmd) maybeLeaderId (cMap nsd)
                   return nsd
 
         Just _ -> get >>= \nsd -> do

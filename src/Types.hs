@@ -64,7 +64,7 @@ data Command =
     AppendEntries Term NodeId LogState Log Index |
 
     -- sent by follower to leader in response to AppendEntry if log consistency check fails
-    RespondAppendEntries Term Bool |
+    RespondAppendEntries NodeId Index Term Bool |
 
     -- sent by client to leader. if the node that receives this is not the leader, it forwards it
     -- to the leader.

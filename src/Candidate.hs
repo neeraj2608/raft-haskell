@@ -93,9 +93,9 @@ processCommand cmd =
                   return newNsd
               else do -- §5.2 we're ahead of the other guy. reject stale RPC and continue as candidate
                   logInfo "Received stale AppendEntries RPC. Reject and continue as candidate"
-                  -- note that here we do actually send a response back so the "leader" can update his current term and revert
+                  -- note that here we do actually send a response back so the "leader" can update its current term and revert
                   -- to a follower
-                  liftio $ sendCommand (RespondAppendEntries (currTerm nsd) False) lId (cMap nsd)
+                  liftio $ sendCommand (RespondAppendEntries (nodeId nsd) (lastLogIndex nsd) (currTerm nsd) False) lId (cMap nsd)
                   return nsd
 
         Just _ -> get >>= \nsd -> do
