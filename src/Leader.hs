@@ -53,6 +53,7 @@ processCommand cmd =
             -- Send out heartbeats on expiry (if the inbox is still empty, we'll end up in the
             -- Nothing clause again and a heartbeat will be sent)
             createBroadcastTimeout
+            -- TODO: where to increment commitIndex?
             return nsd
 
         Just _ -> get >>= \nsd -> do
@@ -61,7 +62,6 @@ processCommand cmd =
 
 sendHeartbeat :: NodeStateDetails -> NWS NodeStateDetails
 sendHeartbeat nsd = do
-    logInfo "Sending AppendEntries Heartbeat RPC"
     lg <- execWriterT (return nsd) -- extract the current log
     mapM_ (sendHeartbeat' lg) $ followerList nsd
     return nsd
@@ -72,7 +72,9 @@ sendHeartbeat nsd = do
               -- AppendEntries RPC with log entries starting at nextIndex
               | lastLogIndex nsd >= nextIndex = liftio $ sendCommand (appendEntriesCmd lg nextIndex) nid (cMap nsd)
               -- else send heartbeat with [] entries (??)
-              | otherwise = liftio $ sendCommand heartbeatCmd nid (cMap nsd)
+              | otherwise = do
+                  logInfo $ "Sending Heartbeat to " ++ fromJust nid
+                  liftio $ sendCommand heartbeatCmd nid (cMap nsd)
 
           appendEntriesCmd :: Log -> Index -> Command
           appendEntriesCmd lg nextIndex = AppendEntries (currTerm nsd) (nodeId nsd) (lastLogIndex nsd, lastLogTerm nsd) (newerLogEntries lg nextIndex) (commitIndex nsd)

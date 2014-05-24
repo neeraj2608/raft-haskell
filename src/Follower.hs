@@ -85,7 +85,7 @@ processCommand cmd =
 
         Just ClientReq -> get >>= \nsd -> do
           case currLeaderId nsd of
-              Nothing -> return nsd
+              Nothing -> return nsd --TODO: what happens in this case??
               maybeLeaderId -> do
                   logInfo $ "Forwarding client request to " ++ (fromJust maybeLeaderId)
                   liftio $ sendCommand (fromJust cmd) maybeLeaderId (cMap nsd)

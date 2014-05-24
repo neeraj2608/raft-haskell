@@ -35,8 +35,6 @@ processCommand cmd =
         Just StartCanvassing ->
             get >>= \nsd -> do
                 logInfo $ "Role: " ++ show (currRole nsd)
-                logInfo $ "Received: " ++ show (fromJust cmd)
-                logInfo "Vote for self"
                 --vote for self
                 let newNsd = nsd{votedFor=nodeId nsd}
                 put newNsd
@@ -62,6 +60,10 @@ processCommand cmd =
               else if voteGranted
                   then do
                       logInfo $ "Got vote from " ++ fromJust nid
+                      -- we use the follList to keep track of the successful replies
+                      -- and hence, if we've reached the majority. Once we have a majority,
+                      -- we will overwrite the follList to include ALL the servers in
+                      -- the cluster (this is done below)
                       let newNsd = nsd {followerList=(nid, 0):followerList nsd} -- update followers list. the '0' is just a filler.
                                                                                 -- the actual nextIndex will be filled in if and
                                                                                 -- when this node becomes a leader below
@@ -70,8 +72,10 @@ processCommand cmd =
                       if maj
                           then do -- §5.2 if yes, become leader and send out a heartbeat
                               writeHeartbeat newNsd
-                              logInfo "Received majority; updating follower nextIndex + switching to Leader"
-                              let follList = map (\x -> (fst x, lastLogIndex newNsd + 1)) (followerList newNsd)
+                              logInfo "Received majority; updating everyone's nextIndexes + switching to Leader"
+                              -- here we rewrite the follList to include ALL the servers, not just the ones we heard back from
+                              m <- liftio $ atomically $ readTVar (cMap nsd)
+                              let follList = map (\x -> (x, lastLogIndex nsd + 1)) $ Map.keys $ Map.filterWithKey (\n _ -> n /= nodeId nsd) m
                               put newNsd{currRole=Leader, followerList=follList}
                               get
                           else do

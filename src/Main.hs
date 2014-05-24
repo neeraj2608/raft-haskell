@@ -7,31 +7,35 @@ import Control.Concurrent.Suspend
 import Control.Concurrent.STM
 import qualified Data.Map as Map
 import Node
-import Data.Maybe (fromJust)
 import Control.Monad
+import GHC.Int (Int64)
 
 main :: IO ()
 main = do
         connectionMap <- newTVarIO Map.empty
-        let nodeIds = ["A", "B"] -- , "C", "D", "E"] -- this should ideally come from a config file
-        let ports = ["2344", "2345"] -- , "2346", "2347", "2348"] -- this should ideally come from a config file
+        let nodeIds = ["A", "B", "C", "D", "E"] -- this should ideally come from a config file
+        let ports = ["2344", "2345", "2346", "2347", "2348"] -- this should ideally come from a config file
         let nodes = map (Node . Just) nodeIds
 
         -- Init all the nodes
         mapM_ (startNode connectionMap) (zip nodes ports)
 
         -- Send some test commands
-        --m <- readTVarIO connectionMap
-        --sendCommand AcceptClientReq (fromJust $ Map.lookup (head nodes) m)
+        createDelay 2
+        sendCommand ClientReq (getId $ nodes!!3) connectionMap
 
         -- TODO: Here we should actually have an infinite loop that looks at
         -- incoming messages on this port
-        tVar <- newEmptyMVar
-        forkIO (do oneShotTimer (putMVar tVar True) (sDelay 12); return ())
-        void $ takeMVar tVar
+        createDelay 10
 
         --sanity check
         --putStr $ unlines $ map show $ Map.keys m
+
+createDelay :: Int64 -> IO ()
+createDelay duration = do
+    tVar <- newEmptyMVar
+    _ <- forkIO (do _ <- oneShotTimer (putMVar tVar True) (sDelay duration); return ())
+    void $ takeMVar tVar
 
 startNode :: ConnectionMap -> (Node, Port) -> IO()
 startNode connectionMap nodePort = void $ forkIO $ uncurry initNode nodePort connectionMap

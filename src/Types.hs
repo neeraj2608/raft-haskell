@@ -87,7 +87,8 @@ logInfo info = do
         let nodeid = nodeId nsd
             index = lastLogIndex nsd
             term = lastLogTerm nsd
-        tell [((index,term),"-# " ++ fromJust nodeid ++  " #- " ++ info)]
+        --tell [((index,term),"  " ++ fromJust nodeid ++  "  " ++ info)]
+        liftio $ putStrLn (show index ++ " " ++ show term ++ " " ++ fromJust nodeid ++ " " ++ info)
 
 incTerm :: NodeStateDetails -> NWS NodeStateDetails
 incTerm nsd = do
@@ -138,6 +139,7 @@ createBroadcastTimeout = createTimeout 250000
 createElectionTimeout :: NWS ()
 createElectionTimeout = createTimeout 500000
 
+-- | duration is specified in microseconds
 createTimeout :: Int -> NWS()
 createTimeout duration = do
     nsd <- get
