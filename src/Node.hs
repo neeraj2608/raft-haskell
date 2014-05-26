@@ -25,15 +25,13 @@ import Leader
 import System.IO
 
 startInboxListener :: NodeStateDetails -> Handle -> IO ()
-startInboxListener nsd h = do
+startInboxListener nsd logFileHandle = do
     (lg,newNsd) <- run nsd
-    --writeFile "nodeLog.txt" $ unlines $ map show lg
-    hPutStr h $ unlines $ map show lg
-    startInboxListener newNsd h --feed the updated state back in to run
+    hPutStr logFileHandle $ unlines $ map show lg -- write out the node log to a file
+    startInboxListener newNsd logFileHandle -- feed the updated state back in to run
 
 run :: NodeStateDetails -> IO (Log, NodeStateDetails)
-run = runStateT (execWriterT updateState) -- runWriterT :: WriterT w m a -> m (a, w); w = Log, m = StateT NodeStateDetails IO, a = NodeStateDetails
-                                          -- runStateT :: StateT s m a -> s -> m (a, s); s = NodeStateDetails, m = IO, a = Log
+run = runStateT (execWriterT updateState) -- runStateT :: StateT s m a -> s -> m (a, s); s = NodeStateDetails, m = IO, a = Log
                                           -- execWriterT :: Monad m => WriterT w m a -> m w; w = Log, m = StateT NodeStateDetails IO, a = NodeStateDetails
 
 updateState :: NWS NodeStateDetails

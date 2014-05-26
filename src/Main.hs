@@ -18,14 +18,17 @@ main = do
         let ports = ["2344", "2345", "2346", "2347", "2348"] -- this should ideally come from a config file
         let nodes = map (Node . Just) nodeIds
 
-        logFile <- openFile "nodeLog.txt" WriteMode
+        logFile <- openFile "nodeLog.txt" WriteMode -- the filename should come from a config file
 
         -- Init all the nodes
         mapM_ (startNode connectionMap logFile) (zip nodes ports)
 
         -- Send some test commands
         createDelay 2 -- let the system settle down
-        sendCommand (ClientReq "testClientCommand") (getId $ nodes!!3) connectionMap
+        sendCommand (ClientReq "testClientCommand1") (getId $ nodes!!3) connectionMap
+
+        createDelay 2 -- let the system settle down
+        sendCommand (ClientReq "testClientCommand2") (getId $ nodes!!2) connectionMap
 
         -- TODO: Here we should actually have an infinite loop that looks at
         -- incoming messages on this port
@@ -43,11 +46,11 @@ createDelay duration = do
     void $ takeMVar tVar
 
 startNode :: ConnectionMap -> Handle -> (Node, Port) -> IO()
-startNode connectionMap h nodePort = void $ forkIO $ uncurry initNode nodePort connectionMap h
+startNode connectionMap logFileHandle nodePort = void $ forkIO $ uncurry initNode nodePort connectionMap logFileHandle
 
 initNode :: Node -> Port -> ConnectionMap -> Handle -> IO ()
-initNode node _ m h = do
+initNode node _ m logFileHandle = do
         ibox <- newTChanIO
-        let initState = NodeStateDetails Follower 0 Nothing Nothing [] 0 0 0 (getId node) ibox m
+        let initState = NodeStateDetails Follower 0 Nothing Nothing [] 0 (getId node) ibox m []
         atomically $ modifyTVar m (Map.insert (getId node) ibox)
-        void $ forkIO $ Node.startInboxListener initState h -- loop continuously and atomically check ibox for messages
+        void $ forkIO $ Node.startInboxListener initState logFileHandle -- loop continuously and atomically check ibox for messages

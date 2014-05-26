@@ -67,7 +67,7 @@ processCommand cmd =
                                          liftio $ sendCommand (RespondRequestVotes (currTerm n) False (nodeId n)) cid (cMap n)
                                          return n
 
-        Just (AppendEntries lTerm lId (prevLogIndex, prevLogTerm) lEntries lCommitIndex)
+        Just (AppendEntries lTerm lId prevlogindexterm lEntries lCommitIndex)
             | null lEntries -> get >>= \nsd -> do
                 logInfo $ "Received heartbeat from " ++ (fromJust lId)
                 let newNsd = nsd{currLeaderId = lId} -- update leader Id
@@ -79,7 +79,28 @@ processCommand cmd =
                         logInfo $ "Reject stale AppendEntries from " ++ (fromJust lId)
                         liftio $ sendCommand (RespondAppendEntries (nodeId nsd) (lastLogIndex nsd) (currTerm nsd) False) lId (cMap nsd)
                         return nsd
-                    else return nsd --TODO: log consistency check
+                    else do
+                        if (null $ nodeLog nsd) || previousEntriesMatch prevlogindexterm nsd
+                            -- If your log is empty or you have a match on the previous log index and term sent
+                            -- by the leader, accept the entries
+                            then do
+                                writeToLog' lEntries nsd >>= \n -> do
+                                logInfo $ "Accept AppendEntries from " ++ (fromJust lId)
+                                liftio $ sendCommand (RespondAppendEntries (nodeId n) (lastLogIndex n) (currTerm n) True) lId (cMap n)
+                                return n
+                            else do
+                                -- a. Remove your most recent log entry (we do this right now to avoid having to
+                                -- check for conflicts (same index diff terms)) later on. See c for an explanation.
+                                -- b. Next, reject the append entries rpc.
+                                -- c. The leader will decrement next index and try another append entries. When
+                                -- the prevLog* finally matches, all we have to do is to append the entries the
+                                -- leader sent us. This is only possible because we removed our log entries in a.
+                                -- as we rejected append entries rpcs.
+                                -- TODO: This can cause a potential problem with the Writer. How do we roll back
+                                --       writer entries??
+                                let newNsd = nsd{nodeLog=tail $ nodeLog nsd}
+                                put newNsd
+                                return newNsd
 
         Just (ClientReq _) -> get >>= \nsd -> do
           case currLeaderId nsd of
@@ -99,8 +120,16 @@ processCommand cmd =
 -- a. the log with the larger term in its last entry is more up to date
 -- b. if both logs have the same number of entries, the longer log (i,e., larger index) is more up to date
 isMoreUpToDate :: NodeStateDetails -> LogState -> Bool
-isMoreUpToDate nsd logState | lastLogTerm nsd > snd logState = True
+isMoreUpToDate nsd logState | null $ nodeLog nsd = False
+                            | lastLogTerm nsd > snd logState = True
                             | lastLogTerm nsd < snd logState = False
                             | otherwise = case compare (lastLogIndex nsd) (fst logState) of
                                               GT -> True
                                               _ -> False
+
+previousEntriesMatch :: LogState -> NodeStateDetails -> Bool
+previousEntriesMatch (prevIdx, prevTerm) nsd = foldr f False (fst `fmap` nodeLog nsd)
+    where f :: LogState -> Bool -> Bool
+          f (idx, term) r | r = r
+                          | idx == prevIdx && term==prevTerm = True
+                          | otherwise = False

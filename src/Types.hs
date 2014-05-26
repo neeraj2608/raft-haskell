@@ -32,12 +32,11 @@ data NodeStateDetails = NodeStateDetails {
                           currLeaderId :: NodeId, -- ^ Id of the current leader. Used by followers to redirect requests sent to them by clients
                           votedFor :: NodeId, -- ^ Id of the last node we voted for
                           followerList :: [(NodeId, Index)], -- ^ List of NodeIds + nextIndex for this node's followers
-                          lastLogIndex :: Index, -- ^ The last index in the log written thus far
-                          lastLogTerm :: Term, -- ^ The last term in the log written thus far
                           currTerm :: Term, -- ^ The latest term seen by this node
                           nodeId :: NodeId,  -- ^ The id of this node
                           inbox :: TChan Command,
-                          cMap :: ConnectionMap
+                          cMap :: ConnectionMap,
+                          nodeLog :: Log
                         }
 
 data Node = Node {getId :: NodeId} deriving (Ord, Eq, Show)
@@ -81,22 +80,47 @@ liftio = lift . lift
 liftstm :: STM a -> WriterT Log (StateT NodeStateDetails IO) a
 liftstm = liftio . atomically
 
--- | Log a string to a node's log. Uses the current term and
---   lastLogIndex + 1
+-- | Increments the last log index and logs a string to the new
+--   index. The string is tagged with term = current term.
+--   Also updates the log in the StateT monad
 writeToLog :: String -> NodeStateDetails -> NWS NodeStateDetails
-writeToLog info n =
-        incLastLogIndex n >>= \nsd -> do -- increment the last log index first
-        let nodeid = nodeId nsd
-            index = lastLogIndex nsd
+writeToLog info nsd = do
+        let index = lastLogIndex nsd
             currterm = currTerm nsd
-        tell [((index,currterm)," " ++ fromJust nodeid ++  " " ++ (show . currRole) nsd ++ " " ++ info)]
-        return nsd
+            newLog = ((index+1,currterm),info)
+            newNsd = nsd{nodeLog=newLog:nodeLog nsd} -- consing to head is O(1). Better than ++ which is O(n) in length of first list
+        tell $ addNodeInfo nsd [newLog]
+        put newNsd
+        return newNsd
 
-incLastLogIndex :: NodeStateDetails -> NWS NodeStateDetails
-incLastLogIndex nsd = do
-       let newNsd = nsd{lastLogIndex=lastLogIndex nsd + 1}
-       put newNsd
-       return newNsd
+writeToLog' :: Log -> NodeStateDetails -> NWS NodeStateDetails
+writeToLog' lg nsd = do
+        let newNsd = nsd{nodeLog=lg++nodeLog nsd}
+        tell $ addNodeInfo nsd lg
+        put newNsd
+        return newNsd
+
+addNodeInfo :: NodeStateDetails -> Log -> Log
+addNodeInfo nsd = fmap f
+    where f :: (LogState, String) -> (LogState, String)
+          f (x, s) = (x, fromJust (nodeId nsd) ++ " " ++ (show . currRole) nsd ++ " " ++ s)
+
+lastLogIndex :: NodeStateDetails -> Index
+lastLogIndex nsd = fst $ lastLogIndexTerm nsd
+
+lastLogTerm :: NodeStateDetails -> Index
+lastLogTerm nsd = snd $ lastLogIndexTerm nsd
+
+lastLogIndexTerm :: NodeStateDetails -> (Index, Term)
+lastLogIndexTerm nsd | null $ nodeLog nsd = (0, 0) -- index starts off at 1 (0 is incremented to 1 in writeToLog)
+                     | otherwise = fst $ head $ nodeLog nsd
+
+-- This method is called by the Leader while sending an AppendEntries command. Since
+-- this can only happen after the leader has appended at least one client request to
+-- its log, nodeLog has to have a length of at least 1.
+prevLogIndexTerm :: NodeStateDetails -> (Index, Term)
+prevLogIndexTerm nsd | length (nodeLog nsd) == 1 = (0, 0)
+                     | otherwise = fst $ nodeLog nsd !! 1
 
 -- | Log a string to STDOUT. Uses the current term and index
 logInfo :: String -> NWS ()
@@ -104,14 +128,8 @@ logInfo info = do
         nsd <- get
         let nodeid = nodeId nsd
             index = lastLogIndex nsd
-            term = lastLogTerm nsd
+            term = currTerm nsd
         liftio $ putStrLn (show index ++ " " ++ show term ++ " " ++ fromJust nodeid ++ " " ++ (show . currRole) nsd ++ " " ++ info)
-
-incTermIndex :: NodeStateDetails -> NWS NodeStateDetails
-incTermIndex nsd = do
-       let newNsd = nsd{lastLogIndex=lastLogIndex nsd + 1, lastLogTerm=lastLogTerm nsd + 1}
-       put newNsd
-       return newNsd
 
 -- | broadcast to all nodes except yourself
 broadCastExceptSelf :: Command -> ConnectionMap -> NodeId -> IO ()
@@ -158,14 +176,15 @@ createTimeout duration = do
     startTime <- liftio getClockTime
     logInfo $ "Waiting... " ++ show startTime
     endTime <- liftio getClockTime
-    logInfo $ printf "Timeout expired " ++ show endTime ++ " " ++ show result
+    logInfo $ printf "Timeout expired %s %s" (show endTime) (show result)
 
 writeHeartbeat :: NodeStateDetails -> NWS ()
 writeHeartbeat nsd = do
     let ibox = inbox nsd
     liftstm $ writeTChan ibox
-             (AppendEntries (currTerm nsd)
-              (nodeId nsd)
-              (lastLogIndex nsd, lastLogTerm nsd)
-              []
-              0)
+             (AppendEntries
+              (currTerm nsd) -- this matters for a Candidate receiving a heartbeat
+              (nodeId nsd) -- this matters for a Candidate/Follower receiving a heartbeat
+              (0, 0) -- this does NOT matter for a heartbeat
+              [] -- this matters for a Follower receiving a heartbeat
+              0) -- this does NOT matter for a heartbeat
