@@ -69,7 +69,8 @@ data Command =
     -- sent by client to leader. if the node that receives this is not the leader, it forwards it
     -- to the leader.
     -- TODO: have some data as an argument?
-    ClientReq |
+    --       we'll just say String for the moment
+    ClientReq String |
 
     RespondClientReq
     deriving (Show)
@@ -80,21 +81,31 @@ liftio = lift . lift
 liftstm :: STM a -> WriterT Log (StateT NodeStateDetails IO) a
 liftstm = liftio . atomically
 
--- | Log a string. Uses the current term and index
+-- | Log a string to a node's log. Uses the current term and
+--   lastLogIndex + 1
+writeToLog :: String -> NodeStateDetails -> NWS NodeStateDetails
+writeToLog info n =
+        incLastLogIndex n >>= \nsd -> do -- increment the last log index first
+        let nodeid = nodeId nsd
+            index = lastLogIndex nsd
+            currterm = currTerm nsd
+        tell [((index,currterm)," " ++ fromJust nodeid ++  " " ++ (show . currRole) nsd ++ " " ++ info)]
+        return nsd
+
+incLastLogIndex :: NodeStateDetails -> NWS NodeStateDetails
+incLastLogIndex nsd = do
+       let newNsd = nsd{lastLogIndex=lastLogIndex nsd + 1}
+       put newNsd
+       return newNsd
+
+-- | Log a string to STDOUT. Uses the current term and index
 logInfo :: String -> NWS ()
 logInfo info = do
         nsd <- get
         let nodeid = nodeId nsd
             index = lastLogIndex nsd
             term = lastLogTerm nsd
-        --tell [((index,term),"  " ++ fromJust nodeid ++  "  " ++ info)]
-        liftio $ putStrLn (show index ++ " " ++ show term ++ " " ++ fromJust nodeid ++ " " ++ info)
-
-incTerm :: NodeStateDetails -> NWS NodeStateDetails
-incTerm nsd = do
-       let newNsd = nsd{currTerm=currTerm nsd + 1}
-       put newNsd
-       return newNsd
+        liftio $ putStrLn (show index ++ " " ++ show term ++ " " ++ fromJust nodeid ++ " " ++ (show . currRole) nsd ++ " " ++ info)
 
 incTermIndex :: NodeStateDetails -> NWS NodeStateDetails
 incTermIndex nsd = do

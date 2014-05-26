@@ -34,7 +34,6 @@ processCommand cmd =
 
         Just StartCanvassing ->
             get >>= \nsd -> do
-                logInfo $ "Role: " ++ show (currRole nsd)
                 --vote for self
                 let newNsd = nsd{votedFor=nodeId nsd}
                 put newNsd
@@ -49,7 +48,6 @@ processCommand cmd =
         Just RequestVotes{} -> get -- a candidate always votes for itself; hence nothing to do
 
         Just (RespondRequestVotes term voteGranted nid) -> get >>= \nsd -> do
-           logInfo $ "Role: " ++ show (currRole nsd)
            logInfo $ "Received: " ++ show (fromJust cmd)
            if currTerm nsd < term
               then do -- we're out of date, revert to Follower

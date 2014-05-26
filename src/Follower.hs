@@ -11,7 +11,6 @@ processCommand cmd =
     case cmd of
         --start election timeout
         Nothing -> get >>= \nsd -> do
-            logInfo $ "Role: " ++ show (currRole nsd)
             createElectionTimeout
             let ibox = inbox nsd
             empty <- liftstm $ isEmptyTChan ibox
@@ -29,7 +28,6 @@ processCommand cmd =
 
         Just (RequestVotes cTerm cid logState) ->
             get >>= \nsd -> do
-                logInfo $ "Role: " ++ show (currRole nsd)
                 logInfo $ "Received: " ++ show (fromJust cmd)
                 if cTerm < currTerm nsd
                     then do -- §5.2 our current term is more than the candidate's
@@ -83,7 +81,7 @@ processCommand cmd =
                         return nsd
                     else return nsd --TODO: log consistency check
 
-        Just ClientReq -> get >>= \nsd -> do
+        Just (ClientReq _) -> get >>= \nsd -> do
           case currLeaderId nsd of
               Nothing -> return nsd --TODO: what happens in this case??
               maybeLeaderId -> do
@@ -92,7 +90,6 @@ processCommand cmd =
                   return nsd
 
         Just _ -> get >>= \nsd -> do
-            logInfo $ "Role: " ++ show (currRole nsd)
             logInfo $ printf "Invalid command: %s %s" ((show . currRole) nsd) (show $ fromJust cmd)
             return nsd
 

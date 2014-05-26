@@ -9,8 +9,11 @@ import Data.Maybe (fromJust)
 processCommand :: Maybe Command -> NWS NodeStateDetails
 processCommand cmd =
     case cmd of
-        Just ClientReq -> get -- TODO: write entry to log, issue AppendEntries
-                              -- TODO: wait for commit. apply to state machine. respond to client
+        Just (ClientReq x) -> get >>=
+            writeToLog ("Received " ++ x ++ " from client") >>= \_ -> do
+            logInfo $ "Received " ++ x ++ " from client"
+            get
+            -- TODO: wait for commit. apply to state machine. respond to client
 
         Just (RespondAppendEntries fId fIndex fTerm success) -> get >>= \nsd ->
             if fTerm < currTerm nsd
@@ -21,7 +24,7 @@ processCommand cmd =
                   return newNsd
                 else do
                     -- If AppendEntries succeeds:
-                    -- update nextIndex and matchIndex for follower (§5.3) 
+                    -- update nextIndex and matchIndex for follower (§5.3)
                     -- If AppendEntries fails because of log inconsistency:
                     -- decrement nextIndex and retry (§5.3)
                     let newIndex = if success then fIndex + 1 else fIndex - 1
@@ -68,7 +71,7 @@ sendHeartbeat nsd = do
     where
           sendHeartbeat' :: Log -> (NodeId, Index) -> NWS ()
           sendHeartbeat' lg (nid, nextIndex)
-              -- §5.3 If last log index ≥ nextIndex for a follower: send 
+              -- §5.3 If last log index ≥ nextIndex for a follower: send
               -- AppendEntries RPC with log entries starting at nextIndex
               | lastLogIndex nsd >= nextIndex = liftio $ sendCommand (appendEntriesCmd lg nextIndex) nid (cMap nsd)
               -- else send heartbeat with [] entries (??)

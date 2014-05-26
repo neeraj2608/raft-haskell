@@ -22,12 +22,14 @@ import Control.Concurrent.STM
 import Follower
 import Candidate
 import Leader
+import System.IO
 
-startInboxListener :: NodeStateDetails -> IO ()
-startInboxListener nsd = do
+startInboxListener :: NodeStateDetails -> Handle -> IO ()
+startInboxListener nsd h = do
     (lg,newNsd) <- run nsd
-    putStr $ unlines $ map show lg
-    startInboxListener newNsd --feed the updated state back in to run
+    --writeFile "nodeLog.txt" $ unlines $ map show lg
+    hPutStr h $ unlines $ map show lg
+    startInboxListener newNsd h --feed the updated state back in to run
 
 run :: NodeStateDetails -> IO (Log, NodeStateDetails)
 run = runStateT (execWriterT updateState) -- runWriterT :: WriterT w m a -> m (a, w); w = Log, m = StateT NodeStateDetails IO, a = NodeStateDetails
