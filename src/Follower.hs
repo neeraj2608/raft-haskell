@@ -76,7 +76,7 @@ processCommand cmd =
                             return n
                         else do
                             -- a. Remove your most recent log entry (we do this right now to avoid having to
-                            -- check for conflicts (same index diff terms)) later on. See c for an explanation.
+                            -- check for conflicts (same index, diff terms)) later on. See c for an explanation.
                             -- b. Next, reject the append entries rpc.
                             -- c. The leader will decrement next index and try another append entries. When
                             -- the prevLog* finally matches, all we have to do is to append the entries the
@@ -127,7 +127,7 @@ previousEntriesMatch (prevIdx, prevTerm) nsd = foldr f False (fst `fmap` nodeLog
 
 rejectCandidate :: NodeId -> NodeStateDetails -> NWS NodeStateDetails
 rejectCandidate cid n = do -- §5.2 we're more up to date than the candidate that requested a vote
-                       -- reject the RequestVote
+                           -- reject the RequestVote
     liftio $ sendCommand (RespondRequestVotes (currTerm n) False (nodeId n)) cid (cMap n)
     return n
 
