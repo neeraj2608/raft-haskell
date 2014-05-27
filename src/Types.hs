@@ -45,9 +45,6 @@ data NodeStateDetails = NodeStateDetails {
 data Node = Node {getId :: NodeId} deriving (Ord, Eq, Show)
 
 data Command =
-    -- used to make candidates kick off leader election
-    StartCanvassing |
-
     -- broadcast by candidates
     -- 5.4.1 candidate includes its state. Used at follower end to determine if the follower is more
     -- "up-to-date" than the candidate. See RejectVote definition to see how "up-to-date" is
@@ -160,6 +157,8 @@ sendCommand' cmd ibox =
 
 -- | Used to broadcast heartbeats
 -- note that broadcast time << election time << MTBF
+-- broadcast time is a function of your network topology
+-- election timeouts are under programmer control
 -- duration is specified in microseconds
 createBroadcastTimeout :: NWS ()
 createBroadcastTimeout = createTimeout 250000

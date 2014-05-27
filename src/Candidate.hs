@@ -10,30 +10,7 @@ import qualified Data.Map as Map
 processCommand :: Maybe Command -> NWS NodeStateDetails
 processCommand cmd =
     case cmd of
-        Nothing -> get >>=
-                -- Start a randomized timeout
-                -- if at the end of that time, we have not received any
-                -- responses or we have not received a clear majoity,
-                -- restart the election. Note that if someone else had
-                -- received a majority, they would have sent us an
-                -- AppendEntries RPC and our inbox wouldn't be empty. The
-                -- only case in which our inbox can be empty is either no
-                -- one responds (or responds but it gets lost on the way)
-                -- or no one else got a majority vote
-                resetRandomizedElectionTimeout >>= \nsd -> do
-                let ibox = inbox nsd
-                empty <- liftstm $ isEmptyTChan ibox
-                if empty
-                    then do -- nothing in our inbox, restart election
-                        logInfo "Inbox empty. Restarting election..."
-                        liftstm $ writeTChan ibox StartCanvassing
-                        return nsd
-                    else do
-                        logInfo "Something waiting in inbox"
-                        return nsd -- process whatever is in our inbox
-
-        Just StartCanvassing ->
-            get >>= \nsd -> do
+        Nothing -> get >>= \nsd -> do
                 --vote for self
                 let newNsd = nsd{votedFor=nodeId nsd}
                 put newNsd
@@ -43,7 +20,25 @@ processCommand cmd =
                     (RequestVotes (currTerm nsd) (nodeId nsd) (lastLogIndex nsd, lastLogTerm nsd)) -- include log index and current term
                     (cMap nsd)
                     (nodeId nsd)
-                return newNsd -- jump into the Nothing clause and start the timeout
+                -- Start a randomized timeout
+                -- if at the end of that time, we have not received any
+                -- responses or we have not received a clear majoity,
+                -- restart the election. Note that if someone else had
+                -- received a majority, they would have sent us an
+                -- AppendEntries RPC and our inbox wouldn't be empty. The
+                -- only case in which our inbox can be empty is either no
+                -- one responds (or responds but it gets lost on the way)
+                -- or no one else got a majority vote
+                resetRandomizedElectionTimeout newNsd >>= \n -> do
+                let ibox = inbox n
+                empty <- liftstm $ isEmptyTChan ibox
+                if empty
+                    then do -- nothing in our inbox, restart election
+                        logInfo "Inbox empty. Restarting election..."
+                        return n
+                    else do
+                        logInfo "Something waiting in inbox"
+                        return n -- process whatever is in our inbox
 
         Just RequestVotes{} -> get -- a candidate always votes for itself; hence nothing to do
 

@@ -18,7 +18,7 @@ processCommand cmd =
                 then do
                     logInfo "Nothing waiting in inbox"
                     logInfo "Incrementing term, Switching to Candidate"
-                    liftstm $ writeTChan ibox StartCanvassing
+                    --liftstm $ writeTChan ibox StartCanvassing
                     let newNsd = nsd{currRole=Candidate, currTerm=currTerm nsd+1}
                     put newNsd
                     return newNsd
