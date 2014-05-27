@@ -52,7 +52,7 @@ processCommand cmd =
                                   --    that we make in sendHeartbeatOrAppendEntries
 
         Nothing -> get >>= sendHeartbeatOrAppendEntries >>= \nsd -> do -- send off a heartbeat
-            -- Start a randomized timeout
+            -- Start a timeout
             -- Send out heartbeats on expiry (if the inbox is still empty, we'll end up in the
             -- Nothing clause again and a heartbeat will be sent)
             createBroadcastTimeout

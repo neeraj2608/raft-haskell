@@ -9,6 +9,7 @@ import Node
 import GHC.Int (Int64)
 import System.IO
 import System.Random
+import System.Time
 import Types
 import qualified Data.Map as Map
 
@@ -47,9 +48,10 @@ startNode :: ConnectionMap -> Handle -> (Node, Port) -> IO()
 startNode connectionMap logFileHandle nodePort = void $ forkIO $ uncurry initNode nodePort connectionMap logFileHandle
 
 initNode :: Node -> Port -> ConnectionMap -> Handle -> IO ()
-initNode node port m logFileHandle = do
+initNode node _ m logFileHandle = do
         ibox <- newTChanIO
-        let std = mkStdGen $ read port
+        time <- System.Time.toCalendarTime =<< getClockTime
+        let std = mkStdGen $ fromIntegral $ ctPicosec time
             (dur, newStd) = randomR (150000, 300000) std
             initState = NodeStateDetails Follower 0 Nothing Nothing [] 0 (getId node) ibox m [] newStd dur
         atomically $ modifyTVar m (Map.insert (getId node) ibox)

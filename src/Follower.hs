@@ -82,6 +82,9 @@ processCommand cmd =
                             -- the prevLog* finally matches, all we have to do is to append the entries the
                             -- leader sent us. This is only possible because we removed our log entries in a.
                             -- as we rejected append entries rpcs.
+                            -- As an aside, note that such a destructive update to its own log must never be
+                            -- carried out by a leader (we're a Follower here, so it's okay). This is called
+                            -- the Leader Append-Only property
                             -- TODO: This can cause a potential problem with the Writer. How do we roll back
                             --       writer entries??
                             let newNsd = nsd{nodeLog=tail $ nodeLog nsd}

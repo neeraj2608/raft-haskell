@@ -178,7 +178,8 @@ createElectionTimeout = do
 --   time so chosen will be used until the next time this node starts an election
 resetRandomizedElectionTimeout :: NodeStateDetails -> NWS NodeStateDetails
 resetRandomizedElectionTimeout nsd = do
-    let std = stdGen nsd
+    time <- liftio $ System.Time.toCalendarTime =<< getClockTime
+    let std = mkStdGen $ fromIntegral $ ctPicosec time
         (dur, newStd) = randomR (150000,300000) std
         newNsd = nsd{stdGen=newStd, electionDur=dur}
     put newNsd
