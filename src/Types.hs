@@ -70,8 +70,7 @@ data Command =
 
     -- sent by client to leader. if the node that receives this is not the leader, it forwards it
     -- to the leader.
-    -- TODO: have some data as an argument?
-    --       we'll just say String for the moment
+    -- TODO: have some data as an argument? we'll just say String for the moment
     ClientReq String |
 
     RespondClientReq
@@ -168,7 +167,6 @@ createBroadcastTimeout = createTimeout 250000
 -- | Used for election timeouts
 -- note that broadcast time << election time << MTBF
 -- duration is specified in microseconds
--- TODO: randomize these durations
 createElectionTimeout :: NWS ()
 createElectionTimeout = do
     nsd <- get
@@ -176,6 +174,8 @@ createElectionTimeout = do
     logInfo $ printf "Using election timeout = %s mSec" $ show $ duration `div` 1000
     createTimeout duration
 
+-- | Used by candidates to randomize backoff time at the start of every election. The randomized
+--   time so chosen will be used until the next time this node starts an election
 resetRandomizedElectionTimeout :: NodeStateDetails -> NWS NodeStateDetails
 resetRandomizedElectionTimeout nsd = do
     let std = stdGen nsd

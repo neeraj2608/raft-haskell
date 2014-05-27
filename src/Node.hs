@@ -60,7 +60,6 @@ revertToFollower cmd = do
         Leader -> Leader.processCommand cmd
         Candidate -> Candidate.processCommand cmd
 
--- TODO: remove the Maybe Command param. It's just for debugging
 revertToFollowerOrContinueInSameState :: NodeId -> Term -> NodeStateDetails -> Maybe Command -> NWS NodeStateDetails
 revertToFollowerOrContinueInSameState sId sTerm nsd cmd =
     if currTerm nsd < sTerm -- §5.2 there's another leader ahead of us, revert to Follower
