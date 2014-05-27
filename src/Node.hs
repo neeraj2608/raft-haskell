@@ -2,14 +2,6 @@ module Node where
 
 {-
   Generalized Raft node.
-  This models all the state transitions and functionality
-  of a node.
-
-  Leader needs to keep track of its followers (this list can
-  be initialized when the leader was still a candidate) so it knows
-  how many followers it has. This way, it can decide when
-  a "majority" has responded. Leader also must keep track
-  of the nextIndex and matchIndex for each of its followers.
 
   Followers need to keep track of the leader so e.g. they
   can forward requests erroneously sent to them by clients
@@ -38,14 +30,26 @@ run = runStateT (execWriterT updateState) -- runStateT :: StateT s m a -> s -> m
 
 updateState :: NWS NodeStateDetails
 updateState = do
-        nsd <- get
-        let currentRole = currRole nsd
-            ibox = inbox nsd
-        cmd <- liftstm $ tryReadTChan ibox
-        case currentRole of
-          Follower -> Follower.processCommand cmd
-          _ -> possiblyRevertToFollower cmd
+    nsd <- get
+    let currentRole = currRole nsd
+        ibox = inbox nsd
+    cmd <- liftstm $ tryReadTChan ibox
+    case currentRole of
+      Follower -> Follower.processCommand cmd
+      _ -> possiblyRevertToFollower cmd
 
+-- | This function either:
+--   a. Reverts a node to follower state if it receives an RPC with a term larger than
+--      its current term (signifying that it is out of date). The node also updates its
+--      current term to the larger value.
+--   OR
+--   b. If the term of the received RPC is smaller than the node's current term, then
+--      the node continues to process the command
+--      Two additional things may need to happen:
+--      1. If the RPC was an AppendEntries, it must be rejected so the out of date leader
+--         that sent it can revert itself to a follower
+--      2. If the RPC was a RequestVotes, it must be rejected so the out of date candidate
+--         that sent it can revert itself to a follower
 possiblyRevertToFollower :: Maybe Command -> NWS NodeStateDetails
 possiblyRevertToFollower cmd = do
     nsd <- get
@@ -71,7 +75,8 @@ revertToFollowerOrContinueInSameState sId sTerm nsd cmd =
             -- That is not a problem, however, as the leader will keep sending AppendEntries until it hears back from all
             -- its followers.
             return newNsd
-        else do -- §5.1 we're ahead of the other guy. reject stale RPC and continue in same state
+        else do
+            -- §5.1 we're ahead of the other guy. reject stale RPC and continue in same state
             -- note that here we do actually send a response back so the "leader" can update its current term and revert
             -- to a follower
             case cmd of

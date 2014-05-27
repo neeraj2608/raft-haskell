@@ -70,27 +70,27 @@ sendHeartbeatOrAppendEntries nsd = do
     mapM_ (sendHeartbeatOrAppendEntries' lg) $ followerList nsd
     return nsd
     where
-          sendHeartbeatOrAppendEntries' :: Log -> (NodeId, Index) -> NWS ()
-          sendHeartbeatOrAppendEntries' lg (nid, nextIndex)
-              -- §5.3 If last log index ≥ nextIndex for a follower: send
-              -- AppendEntries RPC with log entries starting at nextIndex
-              | lastLogIndex nsd >= nextIndex = do
-                  logInfo $ printf "my last index = %s, %s's next index = %s" (show $ lastLogIndex nsd) (fromJust nid) (show nextIndex)
-                  logInfo $ printf "Sending AppendEntries to %s" $ fromJust nid
-                  liftio $ sendCommand (createAppendEntries lg nextIndex) nid (cMap nsd)
-              -- else send heartbeat with [] entries (??)
-              | otherwise = do
-                  logInfo $ "Sending Heartbeat to " ++ fromJust nid
-                  liftio $ sendCommand createHeartbeat nid (cMap nsd)
+        sendHeartbeatOrAppendEntries' :: Log -> (NodeId, Index) -> NWS ()
+        sendHeartbeatOrAppendEntries' lg (nid, nextIndex)
+            -- §5.3 If last log index ≥ nextIndex for a follower: send
+            -- AppendEntries RPC with log entries starting at nextIndex
+            | lastLogIndex nsd >= nextIndex = do
+                logInfo $ printf "my last index = %s, %s's next index = %s" (show $ lastLogIndex nsd) (fromJust nid) (show nextIndex)
+                logInfo $ printf "Sending AppendEntries to %s" $ fromJust nid
+                liftio $ sendCommand (createAppendEntries lg nextIndex) nid (cMap nsd)
+            -- else send heartbeat with [] entries (??)
+            | otherwise = do
+                logInfo $ "Sending Heartbeat to " ++ fromJust nid
+                liftio $ sendCommand createHeartbeat nid (cMap nsd)
 
-          createAppendEntries :: Log -> Index -> Command
-          createAppendEntries lg nextIndex = AppendEntries (currTerm nsd) (nodeId nsd) (prevLogIndexTerm nsd) (collectNewerLogEntries lg nextIndex) (commitIndex nsd)
+        createAppendEntries :: Log -> Index -> Command
+        createAppendEntries lg nextIndex = AppendEntries (currTerm nsd) (nodeId nsd) (prevLogIndexTerm nsd) (collectNewerLogEntries lg nextIndex) (commitIndex nsd)
 
-          collectNewerLogEntries :: Log -> Index -> Log
-          collectNewerLogEntries lg nextIndex = takeWhile (\((lgIndex,_),_) -> lgIndex >= nextIndex) lg
+        collectNewerLogEntries :: Log -> Index -> Log
+        collectNewerLogEntries lg nextIndex = takeWhile (\((lgIndex,_),_) -> lgIndex >= nextIndex) lg
 
-          createHeartbeat :: Command
-          createHeartbeat = AppendEntries (currTerm nsd) (nodeId nsd) (lastLogIndex nsd, lastLogTerm nsd) [] (commitIndex nsd)
+        createHeartbeat :: Command
+        createHeartbeat = AppendEntries (currTerm nsd) (nodeId nsd) (lastLogIndex nsd, lastLogTerm nsd) [] (commitIndex nsd)
 
 updateNextIndex :: NodeId -> Index -> [(NodeId, Index)] -> [(NodeId, Index)]
 updateNextIndex nid newIndex = fmap (\(nId, oldIndex) -> if nId == nid then (nId,newIndex) else (nId, oldIndex))

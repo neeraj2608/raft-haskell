@@ -18,7 +18,6 @@ processCommand cmd =
                 then do
                     logInfo "Nothing waiting in inbox"
                     logInfo "Incrementing term, Switching to Candidate"
-                    --liftstm $ writeTChan ibox StartCanvassing
                     let newNsd = nsd{currRole=Candidate, currTerm=currTerm nsd+1}
                     put newNsd
                     return newNsd
@@ -52,50 +51,44 @@ processCommand cmd =
                                                 put newNsd
                                                 return newNsd
 
-        Just (AppendEntries lTerm lId prevlogindexterm lEntries lCommitIndex) -> get >>= \nsd -> do
-            if lTerm < currTerm nsd
+        Just (AppendEntries _ lId prevlogindexterm lEntries _) -> get >>= \nsd ->
+            if null lEntries -- heartbeat
                 then do
-                    logInfo $ "Reject stale AppendEntries from " ++ (fromJust lId)
-                    liftio $ sendCommand (RespondAppendEntries (currTerm nsd) (nodeId nsd) (lastLogIndex nsd) False) lId (cMap nsd)
-                    return nsd
-            else
-                if null lEntries -- heartbeat
-                    then do
-                        logInfo $ "Received heartbeat from " ++ (fromJust lId)
-                        let newNsd = nsd{currLeaderId = lId} -- update leader Id
+                    logInfo $ "Received heartbeat from " ++ fromJust lId
+                    let newNsd = nsd{currLeaderId = lId} -- update leader Id
+                    put newNsd
+                    return newNsd
+            else -- normal append entries
+                if null (nodeLog nsd) || previousEntriesMatch prevlogindexterm nsd
+                    -- If your log is empty or you have a match on the previous log index and term sent
+                    -- by the leader, accept the entries
+                    then writeToLog' lEntries nsd >>= \n -> do
+                        logInfo $ "Accept AppendEntries from " ++ fromJust lId
+                        liftio $ sendCommand (RespondAppendEntries (currTerm n) (nodeId n) (lastLogIndex n) True) lId (cMap n)
+                        return n
+                    else do
+                        -- a. Remove your most recent log entry (we do this right now to avoid having to
+                        -- check for conflicts (same index, diff terms)) later on. See c for an explanation.
+                        -- b. Next, reject the append entries rpc.
+                        -- c. The leader will decrement next index and try another append entries. When
+                        -- the prevLog* finally matches, all we have to do is to append the entries the
+                        -- leader sent us. This is only possible because we removed our log entries in a.
+                        -- as we rejected append entries rpcs.
+                        -- As an aside, note that such a destructive update to its own log must never be
+                        -- carried out by a leader (we're a Follower here, so it's okay). This is called
+                        -- the Leader Append-Only property
+                        -- TODO: This can cause a potential problem with the Writer. How do we roll back
+                        --       writer entries??
+                        logInfo $ "Rolling back log by 1; try again " ++ fromJust lId
+                        let newNsd = nsd{nodeLog=tail $ nodeLog nsd}
                         put newNsd
                         return newNsd
-                else -- normal append entries
-                    if (null $ nodeLog nsd) || previousEntriesMatch prevlogindexterm nsd
-                        -- If your log is empty or you have a match on the previous log index and term sent
-                        -- by the leader, accept the entries
-                        then do
-                            writeToLog' lEntries nsd >>= \n -> do
-                            logInfo $ "Accept AppendEntries from " ++ (fromJust lId)
-                            liftio $ sendCommand (RespondAppendEntries (currTerm n) (nodeId n) (lastLogIndex n) True) lId (cMap n)
-                            return n
-                        else do
-                            -- a. Remove your most recent log entry (we do this right now to avoid having to
-                            -- check for conflicts (same index, diff terms)) later on. See c for an explanation.
-                            -- b. Next, reject the append entries rpc.
-                            -- c. The leader will decrement next index and try another append entries. When
-                            -- the prevLog* finally matches, all we have to do is to append the entries the
-                            -- leader sent us. This is only possible because we removed our log entries in a.
-                            -- as we rejected append entries rpcs.
-                            -- As an aside, note that such a destructive update to its own log must never be
-                            -- carried out by a leader (we're a Follower here, so it's okay). This is called
-                            -- the Leader Append-Only property
-                            -- TODO: This can cause a potential problem with the Writer. How do we roll back
-                            --       writer entries??
-                            let newNsd = nsd{nodeLog=tail $ nodeLog nsd}
-                            put newNsd
-                            return newNsd
 
-        Just (ClientReq _) -> get >>= \nsd -> do
+        Just (ClientReq _) -> get >>= \nsd ->
           case currLeaderId nsd of
               Nothing -> return nsd --TODO: what should happen in this case??
               maybeLeaderId -> do
-                  logInfo $ "Forwarding client request to " ++ (fromJust maybeLeaderId)
+                  logInfo $ "Forwarding client request to " ++ fromJust maybeLeaderId
                   liftio $ sendCommand (fromJust cmd) maybeLeaderId (cMap nsd)
                   return nsd
 

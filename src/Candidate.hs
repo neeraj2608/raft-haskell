@@ -11,34 +11,35 @@ processCommand :: Maybe Command -> NWS NodeStateDetails
 processCommand cmd =
     case cmd of
         Nothing -> get >>= \nsd -> do
-                --vote for self
-                let newNsd = nsd{votedFor=nodeId nsd}
-                put newNsd
-                --broadcast requestvote rpc
-                logInfo "Broadcasting RequestVote RPC"
-                liftio $ broadCastExceptSelf -- exclude self from the broadcast
-                    (RequestVotes (currTerm nsd) (nodeId nsd) (lastLogIndex nsd, lastLogTerm nsd)) -- include log index and current term
-                    (cMap nsd)
-                    (nodeId nsd)
-                -- Start a randomized timeout
-                -- if at the end of that time, we have not received any
-                -- responses or we have not received a clear majoity,
-                -- restart the election. Note that if someone else had
-                -- received a majority, they would have sent us an
-                -- AppendEntries RPC and our inbox wouldn't be empty. The
-                -- only case in which our inbox can be empty is either no
-                -- one responds (or responds but it gets lost on the way)
-                -- or no one else got a majority vote
-                resetRandomizedElectionTimeout newNsd >>= \n -> do
-                let ibox = inbox n
-                empty <- liftstm $ isEmptyTChan ibox
-                if empty
-                    then do -- nothing in our inbox, restart election
-                        logInfo "Inbox empty. Restarting election..."
-                        return n
-                    else do
-                        logInfo "Something waiting in inbox"
-                        return n -- process whatever is in our inbox
+            --vote for self
+            let newNsd = nsd{votedFor=nodeId nsd}
+            put newNsd
+            --broadcast requestvote rpc
+            logInfo "Broadcasting RequestVote RPC"
+            liftio $ broadCastExceptSelf -- exclude self from the broadcast
+                (RequestVotes (currTerm nsd) (nodeId nsd) (lastLogIndex nsd, lastLogTerm nsd)) -- include log index and current term
+                (cMap nsd)
+                (nodeId nsd)
+
+            -- Start a randomized timeout
+            -- if at the end of that time, we have not received any
+            -- responses or we have not received a clear majoity,
+            -- restart the election. Note that if someone else had
+            -- received a majority, they would have sent us an
+            -- AppendEntries RPC and our inbox wouldn't be empty. The
+            -- only case in which our inbox can be empty is either no
+            -- one responds (or responds but it gets lost on the way)
+            -- or no one else got a majority vote
+            resetRandomizedElectionTimeout newNsd >>= \n -> do
+            let ibox = inbox n
+            empty <- liftstm $ isEmptyTChan ibox
+            if empty
+                then do -- nothing in our inbox, restart election
+                    logInfo "Inbox empty. Restarting election..."
+                    return n
+                else do
+                    logInfo "Something waiting in inbox"
+                    return n -- process whatever is in our inbox
 
         Just RequestVotes{} -> get -- a candidate always votes for itself; hence nothing to do
 
@@ -83,5 +84,5 @@ processCommand cmd =
 
 hasMajority :: NodeStateDetails -> IO Bool
 hasMajority nsd = do
-        m <- atomically $ readTVar (cMap nsd)
-        return (length (followerList nsd) + 1 > (length (Map.keys m) `div` 2)) -- the +1 is for the candidate itself
+    m <- atomically $ readTVar (cMap nsd)
+    return (length (followerList nsd) + 1 > (length (Map.keys m) `div` 2)) -- the +1 is for the candidate itself

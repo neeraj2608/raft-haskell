@@ -84,25 +84,25 @@ liftstm = liftio . atomically
 --   Also updates the log in the StateT monad
 writeToLog :: String -> NodeStateDetails -> NWS NodeStateDetails
 writeToLog info nsd = do
-        let index = lastLogIndex nsd
-            currterm = currTerm nsd
-            newLog = ((index+1,currterm),info)
-            newNsd = nsd{nodeLog=newLog:nodeLog nsd} -- consing to head is O(1). Better than ++ which is O(n) in length of first list
-        tell $ addNodeInfo nsd [newLog]
-        put newNsd
-        return newNsd
+    let index = lastLogIndex nsd
+        currterm = currTerm nsd
+        newLog = ((index+1,currterm),info)
+        newNsd = nsd{nodeLog=newLog:nodeLog nsd} -- consing to head is O(1). Better than ++ which is O(n) in length of first list
+    tell $ addNodeInfo nsd [newLog]
+    put newNsd
+    return newNsd
 
 writeToLog' :: Log -> NodeStateDetails -> NWS NodeStateDetails
 writeToLog' lg nsd = do
-        let newNsd = nsd{nodeLog=lg++nodeLog nsd}
-        tell $ addNodeInfo nsd lg
-        put newNsd
-        return newNsd
+    let newNsd = nsd{nodeLog=lg++nodeLog nsd}
+    tell $ addNodeInfo nsd lg
+    put newNsd
+    return newNsd
 
 addNodeInfo :: NodeStateDetails -> Log -> Log
 addNodeInfo nsd = fmap f
     where f :: (LogState, String) -> (LogState, String)
-          f (x, s) = (x, fromJust (nodeId nsd) ++ " " ++ (show . currRole) nsd ++ " " ++ s)
+          f (x, s) = (x, printf "%s  %-10s %s" (fromJust (nodeId nsd)) ((show . currRole) nsd) s)
 
 lastLogIndex :: NodeStateDetails -> Index
 lastLogIndex nsd = fst $ lastLogIndexTerm nsd
@@ -124,36 +124,36 @@ prevLogIndexTerm nsd | length (nodeLog nsd) == 1 = (0, 0)
 -- | Log a string to STDOUT. Uses the current term and index
 logInfo :: String -> NWS ()
 logInfo info = do
-        nsd <- get
-        let nodeid = nodeId nsd
-            index = lastLogIndex nsd
-            term = currTerm nsd
-        liftio $ putStrLn (show index ++ " " ++ show term ++ " " ++ fromJust nodeid ++ " " ++ (show . currRole) nsd ++ " " ++ info)
+    nsd <- get
+    let nodeid = nodeId nsd
+        index = lastLogIndex nsd
+        term = currTerm nsd
+    liftio $ putStrLn (show index ++ " " ++ show term ++ " " ++ fromJust nodeid ++ " " ++ (show . currRole) nsd ++ " " ++ info)
 
 -- | broadcast to all nodes except yourself
 broadCastExceptSelf :: Command -> ConnectionMap -> NodeId -> IO ()
 broadCastExceptSelf cmd connectionMap nid = do
-        m <- readTVarIO connectionMap
-        mapM_ (sendCommand' cmd) $ Map.elems $ Map.filterWithKey (\n _ -> n /= nid) m
+    m <- readTVarIO connectionMap
+    mapM_ (sendCommand' cmd) $ Map.elems $ Map.filterWithKey (\n _ -> n /= nid) m
 
 broadCast :: Command -> ConnectionMap -> IO ()
 broadCast cmd connectionMap = do
-        m <- readTVarIO connectionMap
-        mapM_ (sendCommand' cmd) $ Map.elems m
+    m <- readTVarIO connectionMap
+    mapM_ (sendCommand' cmd) $ Map.elems m
 
 -- | Send a command to a node
 sendCommand :: Command -> NodeId -> ConnectionMap -> IO ()
 sendCommand cmd nid cm = do
-        m <- atomically $ readTVar cm
-        case Map.lookup nid m of
-            Nothing -> error $ "No mapping for node Id " ++ fromJust nid
-            Just tChan -> sendCommand' cmd tChan
+    m <- atomically $ readTVar cm
+    case Map.lookup nid m of
+        Nothing -> error $ "No mapping for node Id " ++ fromJust nid
+        Just tChan -> sendCommand' cmd tChan
 
 -- | Send a command to a node's inbox
 sendCommand' :: Command -> TChan Command -> IO ()
 sendCommand' cmd ibox =
-        --printf "Sending command: %s\n" $ show cmd
-        atomically $ writeTChan ibox cmd
+    --printf "Sending command: %s\n" $ show cmd
+    atomically $ writeTChan ibox cmd
 
 -- | Used to broadcast heartbeats
 -- note that broadcast time << election time << MTBF
