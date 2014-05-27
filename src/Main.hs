@@ -10,6 +10,7 @@ import Node
 import Control.Monad
 import GHC.Int (Int64)
 import System.IO
+import System.Random
 
 main :: IO ()
 main = do
@@ -24,7 +25,7 @@ main = do
         mapM_ (startNode connectionMap logFile) (zip nodes ports)
 
         -- Send some test commands
-        createDelay 2 -- let the system settle down
+        createDelay 6 -- let the system settle down
         sendCommand (ClientReq "testClientCommand1") (getId $ nodes!!3) connectionMap
 
         createDelay 2 -- let the system settle down
@@ -36,9 +37,6 @@ main = do
 
         hClose logFile
 
-        --sanity check
-        --putStr $ unlines $ map show $ Map.keys m
-
 createDelay :: Int64 -> IO ()
 createDelay duration = do
     tVar <- newEmptyMVar
@@ -49,8 +47,10 @@ startNode :: ConnectionMap -> Handle -> (Node, Port) -> IO()
 startNode connectionMap logFileHandle nodePort = void $ forkIO $ uncurry initNode nodePort connectionMap logFileHandle
 
 initNode :: Node -> Port -> ConnectionMap -> Handle -> IO ()
-initNode node _ m logFileHandle = do
+initNode node port m logFileHandle = do
         ibox <- newTChanIO
-        let initState = NodeStateDetails Follower 0 Nothing Nothing [] 0 (getId node) ibox m []
+        let std = mkStdGen $ read port
+            (dur, newStd) = randomR (150000, 300000) std
+            initState = NodeStateDetails Follower 0 Nothing Nothing [] 0 (getId node) ibox m [] newStd dur
         atomically $ modifyTVar m (Map.insert (getId node) ibox)
         void $ forkIO $ Node.startInboxListener initState logFileHandle -- loop continuously and atomically check ibox for messages

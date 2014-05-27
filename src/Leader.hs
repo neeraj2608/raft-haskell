@@ -4,6 +4,7 @@ import Types
 import Control.Monad.State
 import Text.Printf
 import Data.Maybe (fromJust)
+import Control.Applicative
 
 processCommand :: Maybe Command -> NWS NodeStateDetails
 processCommand cmd =
@@ -14,7 +15,7 @@ processCommand cmd =
             get
             -- TODO: wait for commit. apply to state machine. respond to client
 
-        Just (RespondAppendEntries fId fIndex fTerm success) -> get >>= \nsd ->
+        Just (RespondAppendEntries fTerm fId fIndex success) -> get >>= \nsd ->
             if fTerm < currTerm nsd
                 then do
                   logInfo "Reverting to Follower"
@@ -55,8 +56,8 @@ processCommand cmd =
             -- Send out heartbeats on expiry (if the inbox is still empty, we'll end up in the
             -- Nothing clause again and a heartbeat will be sent)
             createBroadcastTimeout
-            -- TODO: where to increment commitIndex?
             return nsd
+            -- TODO: where to increment commitIndex?
 
         Just _ -> get >>= \nsd -> do
             logInfo $ printf "Invalid command: %s %s" ((show . currRole) nsd) (show $ fromJust cmd)
@@ -65,6 +66,7 @@ processCommand cmd =
 sendHeartbeatOrAppendEntries :: NodeStateDetails -> NWS NodeStateDetails
 sendHeartbeatOrAppendEntries nsd = do
     let lg = nodeLog nsd -- extract the current log
+    logInfo $ "follower list: " ++ show (fst <$> followerList nsd)
     mapM_ (sendHeartbeatOrAppendEntries' lg) $ followerList nsd
     return nsd
     where

@@ -9,6 +9,7 @@ import System.Timeout
 import System.Time
 import qualified Data.Map as Map
 import Data.Maybe (fromJust)
+import System.Random
 
 type NWS = WriterT Log (StateT NodeStateDetails IO)
 type Port = String
@@ -36,7 +37,9 @@ data NodeStateDetails = NodeStateDetails {
                           nodeId :: NodeId,  -- ^ The id of this node
                           inbox :: TChan Command,
                           cMap :: ConnectionMap,
-                          nodeLog :: Log
+                          nodeLog :: Log,
+                          stdGen :: StdGen,
+                          electionDur :: Int
                         }
 
 data Node = Node {getId :: NodeId} deriving (Ord, Eq, Show)
@@ -63,7 +66,7 @@ data Command =
     AppendEntries Term NodeId LogState Log Index |
 
     -- sent by follower to leader in response to AppendEntry if log consistency check fails
-    RespondAppendEntries NodeId Index Term Bool |
+    RespondAppendEntries Term NodeId Index Bool |
 
     -- sent by client to leader. if the node that receives this is not the leader, it forwards it
     -- to the leader.
@@ -74,10 +77,10 @@ data Command =
     RespondClientReq
     deriving (Show)
 
-liftio :: IO a -> WriterT Log (StateT NodeStateDetails IO) a
+liftio :: IO a -> NWS a
 liftio = lift . lift
 
-liftstm :: STM a -> WriterT Log (StateT NodeStateDetails IO) a
+liftstm :: STM a -> NWS a
 liftstm = liftio . atomically
 
 -- | Increments the last log index and logs a string to the new
@@ -158,33 +161,36 @@ sendCommand' cmd ibox =
 
 -- | Used to broadcast heartbeats
 -- note that broadcast time << election time << MTBF
--- TODO: randomize these durations
+-- duration is specified in microseconds
 createBroadcastTimeout :: NWS ()
 createBroadcastTimeout = createTimeout 250000
 
 -- | Used for election timeouts
 -- note that broadcast time << election time << MTBF
+-- duration is specified in microseconds
 -- TODO: randomize these durations
 createElectionTimeout :: NWS ()
-createElectionTimeout = createTimeout 500000
+createElectionTimeout = do
+    nsd <- get
+    let duration = electionDur nsd
+    logInfo $ printf "Using election timeout = %s mSec" $ show $ duration `div` 1000
+    createTimeout duration
+
+resetRandomizedElectionTimeout :: NodeStateDetails -> NWS NodeStateDetails
+resetRandomizedElectionTimeout nsd = do
+    let std = stdGen nsd
+        (dur, newStd) = randomR (150000,300000) std
+        newNsd = nsd{stdGen=newStd, electionDur=dur}
+    put newNsd
+    logInfo $ printf "Reset election timeout = %s mSec" $ show $ dur `div` 1000
+    createTimeout dur
+    return newNsd
 
 -- | duration is specified in microseconds
-createTimeout :: Int -> NWS()
+createTimeout :: Int -> NWS ()
 createTimeout duration = do
     nsd <- get
-    result <- liftio $ timeout duration (atomically $ peekTChan (inbox nsd))
     startTime <- liftio getClockTime
-    logInfo $ "Waiting... " ++ show startTime
+    result <- liftio $ timeout duration (atomically $ peekTChan (inbox nsd))
     endTime <- liftio getClockTime
-    logInfo $ printf "Timeout expired %s %s" (show endTime) (show result)
-
-writeHeartbeat :: NodeStateDetails -> NWS ()
-writeHeartbeat nsd = do
-    let ibox = inbox nsd
-    liftstm $ writeTChan ibox
-             (AppendEntries
-              (currTerm nsd) -- this matters for a Candidate receiving a heartbeat
-              (nodeId nsd) -- this matters for a Candidate/Follower receiving a heartbeat
-              (0, 0) -- this does NOT matter for a heartbeat
-              [] -- this matters for a Follower receiving a heartbeat
-              0) -- this does NOT matter for a heartbeat
+    logInfo $ printf "%s mSec elapsed; Received = %s" (show $ (`div` 1000000000) $ tdPicosec (diffClockTimes startTime endTime)) (show result)

@@ -10,7 +10,7 @@ import qualified Data.Map as Map
 processCommand :: Maybe Command -> NWS NodeStateDetails
 processCommand cmd =
     case cmd of
-        Nothing -> get >>= \nsd -> do
+        Nothing -> get >>=
                 -- Start a randomized timeout
                 -- if at the end of that time, we have not received any
                 -- responses or we have not received a clear majoity,
@@ -20,7 +20,7 @@ processCommand cmd =
                 -- only case in which our inbox can be empty is either no
                 -- one responds (or responds but it gets lost on the way)
                 -- or no one else got a majority vote
-                createElectionTimeout
+                resetRandomizedElectionTimeout >>= \nsd -> do
                 let ibox = inbox nsd
                 empty <- liftstm $ isEmptyTChan ibox
                 if empty
@@ -69,7 +69,6 @@ processCommand cmd =
                       maj <- liftio $ hasMajority newNsd
                       if maj
                           then do -- §5.2 if yes, become leader and send out a heartbeat
-                              writeHeartbeat newNsd
                               logInfo "Received majority; updating everyone's nextIndexes + switching to Leader"
                               -- here we rewrite the follList to include ALL the servers, not just the ones we heard back from
                               m <- liftio $ atomically $ readTVar (cMap nsd)
@@ -82,23 +81,6 @@ processCommand cmd =
                   else do
                       logInfo $ "Reject vote from " ++ fromJust nid
                       return nsd  -- §5.2 rejected; start another timeout and wait (this will be handled by the Nothing clause)
-
-        Just (AppendEntries lTerm lId _ _ _) -> get >>= \nsd ->
-           if currTerm nsd < lTerm -- §5.2 there's another leader ahead of us, revert to Follower
-              then do
-                  logInfo $ "Another leader " ++ fromJust lId ++ " found"
-                  let newNsd = nsd {currRole=Follower, currTerm=lTerm}
-                  put newNsd
-                  -- note that here we do not respond to the leader. This means that this AppendEntries RPC is effectively lost.
-                  -- That is not a problem, however, as the leader will keep sending AppendEntries until it hears back from all
-                  -- its followers.
-                  return newNsd
-              else do -- §5.2 we're ahead of the other guy. reject stale RPC and continue as candidate
-                  logInfo "Received stale AppendEntries RPC. Reject and continue as candidate"
-                  -- note that here we do actually send a response back so the "leader" can update its current term and revert
-                  -- to a follower
-                  liftio $ sendCommand (RespondAppendEntries (nodeId nsd) (lastLogIndex nsd) (currTerm nsd) False) lId (cMap nsd)
-                  return nsd
 
         Just _ -> get >>= \nsd -> do
             logInfo $ printf "Invalid command: %s %s" ((show . currRole) nsd) (show $ fromJust cmd)

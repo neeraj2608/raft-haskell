@@ -29,82 +29,68 @@ processCommand cmd =
         Just (RequestVotes cTerm cid logState) ->
             get >>= \nsd -> do
                 logInfo $ "Received: " ++ show (fromJust cmd)
-                if cTerm < currTerm nsd
-                    then do -- §5.2 our current term is more than the candidate's
-                            -- reject the RequestVote
-                        logInfo $ "Reject vote: our currTerm " ++ show (currTerm nsd) ++ "> " ++ fromJust cid ++ "'s currTerm" ++ show cTerm
-                        liftio $ sendCommand (RespondRequestVotes (currTerm nsd) False (nodeId nsd)) cid (cMap nsd)
-                        return nsd
-                    else
-                        if cTerm > currTerm nsd
-                            then do
-                                let newNsd = nsd{votedFor=Nothing, currTerm=cTerm} -- vote for a fresh term we haven't seen before
-                                put newNsd
-                                castBallot newNsd
-                            else castBallot nsd -- vote for the current term
-                        where castBallot :: NodeStateDetails -> NWS NodeStateDetails
-                              castBallot n | isJust (votedFor n) && votedFor n /= cid = do
-                                                 logInfo $ "Reject vote: already voted for " ++ fromJust (votedFor n)
-                                                 rejectCandidate n
-                                           | otherwise =
-                                                 if isMoreUpToDate n logState
-                                                    then do
-                                                        logInfo $ "Reject vote: our currTerm " ++ show (currTerm n) ++ " > "
-                                                                  ++ fromJust cid ++ "'s currTerm " ++ show cTerm
-                                                        rejectCandidate n
-                                                    else do -- §5.2 we're less up to date than the candidate that requested a vote
-                                                            -- accept the RequestVote
-                                                        logInfo $ "Accept vote: our currTerm " ++ show (currTerm n)
-                                                                  ++ " <= " ++ fromJust cid ++ "'s currTerm " ++ show cTerm
-                                                        liftio $ sendCommand (RespondRequestVotes (currTerm n) True (nodeId n)) cid (cMap n)
-                                                        let newNsd = n{votedFor=cid} -- update votedFor
-                                                        put newNsd
-                                                        return newNsd
-
-                              rejectCandidate :: NodeStateDetails -> NWS NodeStateDetails
-                              rejectCandidate n = do -- §5.2 we're more up to date than the candidate that requested a vote
-                                                    -- reject the RequestVote
-                                         liftio $ sendCommand (RespondRequestVotes (currTerm n) False (nodeId n)) cid (cMap n)
-                                         return n
-
-        Just (AppendEntries lTerm lId prevlogindexterm lEntries lCommitIndex)
-            | null lEntries -> get >>= \nsd -> do
-                logInfo $ "Received heartbeat from " ++ (fromJust lId)
-                let newNsd = nsd{currLeaderId = lId} -- update leader Id
-                put newNsd
-                return newNsd
-            | otherwise -> get >>= \nsd -> do
-                if lTerm < currTerm nsd
+                if cTerm > currTerm nsd
                     then do
-                        logInfo $ "Reject stale AppendEntries from " ++ (fromJust lId)
-                        liftio $ sendCommand (RespondAppendEntries (nodeId nsd) (lastLogIndex nsd) (currTerm nsd) False) lId (cMap nsd)
-                        return nsd
-                    else do
-                        if (null $ nodeLog nsd) || previousEntriesMatch prevlogindexterm nsd
-                            -- If your log is empty or you have a match on the previous log index and term sent
-                            -- by the leader, accept the entries
-                            then do
-                                writeToLog' lEntries nsd >>= \n -> do
-                                logInfo $ "Accept AppendEntries from " ++ (fromJust lId)
-                                liftio $ sendCommand (RespondAppendEntries (nodeId n) (lastLogIndex n) (currTerm n) True) lId (cMap n)
-                                return n
-                            else do
-                                -- a. Remove your most recent log entry (we do this right now to avoid having to
-                                -- check for conflicts (same index diff terms)) later on. See c for an explanation.
-                                -- b. Next, reject the append entries rpc.
-                                -- c. The leader will decrement next index and try another append entries. When
-                                -- the prevLog* finally matches, all we have to do is to append the entries the
-                                -- leader sent us. This is only possible because we removed our log entries in a.
-                                -- as we rejected append entries rpcs.
-                                -- TODO: This can cause a potential problem with the Writer. How do we roll back
-                                --       writer entries??
-                                let newNsd = nsd{nodeLog=tail $ nodeLog nsd}
-                                put newNsd
-                                return newNsd
+                        let newNsd = nsd{votedFor=Nothing, currTerm=cTerm} -- vote for a fresh term we haven't seen before
+                        put newNsd
+                        castBallot newNsd
+                    else castBallot nsd -- vote for the current term
+                where castBallot :: NodeStateDetails -> NWS NodeStateDetails
+                      castBallot n | isJust (votedFor n) && votedFor n /= cid = do
+                                         logInfo $ "Reject vote: already voted for " ++ fromJust (votedFor n)
+                                         rejectCandidate cid n
+                                   | otherwise =
+                                         if isMoreUpToDate n logState
+                                            then do
+                                                logInfo $ "Reject vote for " ++ fromJust cid ++ " with currTerm " ++ show cTerm
+                                                rejectCandidate cid n
+                                            else do -- §5.2 we're less up to date than the candidate that requested a vote
+                                                    -- accept the RequestVote
+                                                logInfo $ "Cast vote for " ++ fromJust cid ++ " with currTerm " ++ show cTerm
+                                                liftio $ sendCommand (RespondRequestVotes (currTerm n) True (nodeId n)) cid (cMap n)
+                                                let newNsd = n{votedFor=cid} -- update votedFor
+                                                put newNsd
+                                                return newNsd
+
+        Just (AppendEntries lTerm lId prevlogindexterm lEntries lCommitIndex) -> get >>= \nsd -> do
+            if lTerm < currTerm nsd
+                then do
+                    logInfo $ "Reject stale AppendEntries from " ++ (fromJust lId)
+                    liftio $ sendCommand (RespondAppendEntries (currTerm nsd) (nodeId nsd) (lastLogIndex nsd) False) lId (cMap nsd)
+                    return nsd
+            else
+                if null lEntries -- heartbeat
+                    then do
+                        logInfo $ "Received heartbeat from " ++ (fromJust lId)
+                        let newNsd = nsd{currLeaderId = lId} -- update leader Id
+                        put newNsd
+                        return newNsd
+                else -- normal append entries
+                    if (null $ nodeLog nsd) || previousEntriesMatch prevlogindexterm nsd
+                        -- If your log is empty or you have a match on the previous log index and term sent
+                        -- by the leader, accept the entries
+                        then do
+                            writeToLog' lEntries nsd >>= \n -> do
+                            logInfo $ "Accept AppendEntries from " ++ (fromJust lId)
+                            liftio $ sendCommand (RespondAppendEntries (currTerm n) (nodeId n) (lastLogIndex n) True) lId (cMap n)
+                            return n
+                        else do
+                            -- a. Remove your most recent log entry (we do this right now to avoid having to
+                            -- check for conflicts (same index diff terms)) later on. See c for an explanation.
+                            -- b. Next, reject the append entries rpc.
+                            -- c. The leader will decrement next index and try another append entries. When
+                            -- the prevLog* finally matches, all we have to do is to append the entries the
+                            -- leader sent us. This is only possible because we removed our log entries in a.
+                            -- as we rejected append entries rpcs.
+                            -- TODO: This can cause a potential problem with the Writer. How do we roll back
+                            --       writer entries??
+                            let newNsd = nsd{nodeLog=tail $ nodeLog nsd}
+                            put newNsd
+                            return newNsd
 
         Just (ClientReq _) -> get >>= \nsd -> do
           case currLeaderId nsd of
-              Nothing -> return nsd --TODO: what happens in this case??
+              Nothing -> return nsd --TODO: what should happen in this case??
               maybeLeaderId -> do
                   logInfo $ "Forwarding client request to " ++ (fromJust maybeLeaderId)
                   liftio $ sendCommand (fromJust cmd) maybeLeaderId (cMap nsd)
@@ -127,9 +113,18 @@ isMoreUpToDate nsd logState | null $ nodeLog nsd = False
                                               GT -> True
                                               _ -> False
 
+-- | Returns True if we can find a match in our log that has the same Log coordinates as
+--   the previous Logstate passed in by the leader
 previousEntriesMatch :: LogState -> NodeStateDetails -> Bool
 previousEntriesMatch (prevIdx, prevTerm) nsd = foldr f False (fst `fmap` nodeLog nsd)
     where f :: LogState -> Bool -> Bool
           f (idx, term) r | r = r
                           | idx == prevIdx && term==prevTerm = True
                           | otherwise = False
+
+rejectCandidate :: NodeId -> NodeStateDetails -> NWS NodeStateDetails
+rejectCandidate cid n = do -- §5.2 we're more up to date than the candidate that requested a vote
+                       -- reject the RequestVote
+    liftio $ sendCommand (RespondRequestVotes (currTerm n) False (nodeId n)) cid (cMap n)
+    return n
+
