@@ -1,10 +1,10 @@
 module Leader where
 
-import Types
+import Control.Applicative ((<$>))
 import Control.Monad.State
-import Text.Printf
 import Data.Maybe (fromJust)
-import Control.Applicative
+import Text.Printf
+import Types
 
 processCommand :: Maybe Command -> NWS NodeStateDetails
 processCommand cmd =

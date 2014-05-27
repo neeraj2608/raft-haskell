@@ -1,15 +1,15 @@
 {-# LANGUAGE FlexibleInstances #-}
 module Types where
 
+import Data.Maybe (fromJust)
 import Control.Monad.State
 import Control.Monad.Writer
 import Control.Concurrent.STM
-import Text.Printf
-import System.Timeout
-import System.Time
-import qualified Data.Map as Map
-import Data.Maybe (fromJust)
 import System.Random
+import System.Time
+import System.Timeout
+import Text.Printf
+import qualified Data.Map as Map
 
 type NWS = WriterT Log (StateT NodeStateDetails IO)
 type Port = String

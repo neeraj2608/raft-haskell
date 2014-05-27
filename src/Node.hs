@@ -15,16 +15,16 @@ module Node where
   can forward requests erroneously sent to them by clients
 -}
 
-import Types
+import Candidate
 import Control.Monad.State
 import Control.Monad.Writer
 import Control.Concurrent.STM
+import Data.Maybe (fromJust)
 import Follower
-import Candidate
 import Leader
 import System.IO
-import Data.Maybe (fromJust)
 import Text.Printf
+import Types
 
 startInboxListener :: NodeStateDetails -> Handle -> IO ()
 startInboxListener nsd logFileHandle = do
@@ -44,10 +44,10 @@ updateState = do
         cmd <- liftstm $ tryReadTChan ibox
         case currentRole of
           Follower -> Follower.processCommand cmd
-          _ -> revertToFollower cmd
+          _ -> possiblyRevertToFollower cmd
 
-revertToFollower :: Maybe Command -> NWS NodeStateDetails
-revertToFollower cmd = do
+possiblyRevertToFollower :: Maybe Command -> NWS NodeStateDetails
+possiblyRevertToFollower cmd = do
     nsd <- get
     newNsd <- case cmd of
         Just (RequestVotes term nid _) -> revertToFollowerOrContinueInSameState nid term nsd cmd

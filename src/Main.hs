@@ -1,16 +1,16 @@
 module Main where
 
-import Types
 import Control.Concurrent
 import Control.Concurrent.Timer
 import Control.Concurrent.Suspend
 import Control.Concurrent.STM
-import qualified Data.Map as Map
-import Node
 import Control.Monad
+import Node
 import GHC.Int (Int64)
 import System.IO
 import System.Random
+import Types
+import qualified Data.Map as Map
 
 main :: IO ()
 main = do
